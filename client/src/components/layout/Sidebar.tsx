@@ -94,7 +94,7 @@ export default function Sidebar() {
   )
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col fixed left-0 top-16 bottom-0 z-20">
+    <aside className="hidden md:block w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col fixed left-0 top-16 bottom-0 z-20">
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-4">
         {renderNavGroup('工作台', mainNav)}

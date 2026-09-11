@@ -231,14 +231,14 @@ export default function Topbar() {
   const pomodoroActive = pomodoro?.status === 'work' || pomodoro?.status === 'rest'
 
   return (
-    <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 fixed top-0 left-0 right-0 z-30 flex items-center px-6">
+    <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 fixed top-0 left-0 right-0 z-30 flex items-center px-4 md:px-6">
       {/* 左侧：头像 */}
-      <div className="flex items-center gap-5 flex-shrink-0">
+      <div className="flex items-center gap-3 md:gap-5 flex-shrink-0">
         {/* 用户头像菜单 */}
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-3 p-1 -m-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="flex items-center gap-2 md:gap-3 p-1 -m-1 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
           >
             <div className={cn(
               'w-9 h-9 rounded-full overflow-hidden flex items-center justify-center font-medium',
@@ -254,13 +254,13 @@ export default function Topbar() {
                 user?.avatar || user?.username?.charAt(0)?.toUpperCase()
               )}
             </div>
-            <div className="text-left">
+            <div className="text-left hidden md:block">
               <p className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-tight">{user?.username}</p>
               <p className="text-xs text-gray-400 dark:text-gray-500 leading-tight">
                 {user?.role === 'admin' ? '管理员' : '创作者'}
               </p>
             </div>
-            <ChevronDown className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+            <ChevronDown className="w-4 h-4 text-gray-400 dark:text-gray-500 hidden md:block" />
           </button>
 
           {showUserMenu && (
@@ -297,8 +297,8 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* 中间：搜索框 */}
-      <div className="flex-1 flex items-center justify-center min-w-0 px-4">
+      {/* 中间：搜索框（移动端隐藏） */}
+      <div className="flex-1 hidden md:flex items-center justify-center min-w-0 px-4">
         {/* 搜索框 */}
         <div className="relative w-full max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -330,9 +330,9 @@ export default function Topbar() {
       </div>
 
       {/* 右侧：日期时间 + 番茄钟 + 消息通知 */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {/* 当前日期时间 */}
-        <div className="flex flex-col items-end mr-1">
+      <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+        {/* 当前日期时间（移动端隐藏） */}
+        <div className="hidden md:flex flex-col items-end mr-1">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-200 leading-tight">{currentDateStr}</span>
           <span className="text-xs text-gray-400 dark:text-gray-500 leading-tight font-mono">{currentTimeStr}</span>
         </div>

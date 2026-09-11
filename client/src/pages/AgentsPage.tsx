@@ -185,70 +185,72 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 md:space-y-6 animate-fade-in">
       {/* 页面头部 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">AI智能体团队</h1>
-          <p className="text-gray-500 text-sm mt-1">8个职能化AI智能体，分工协作完成内容生产各环节</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">AI智能体团队</h1>
+          <p className="text-gray-500 text-xs md:text-sm mt-1">8个职能化AI智能体，分工协作</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleCreateAgent} className="btn-primary flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          <button onClick={handleCreateAgent} className="btn-primary flex items-center gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2">
             <Plus className="w-4 h-4" />
-            创建智能体
+            <span className="hidden md:inline">创建智能体</span>
+            <span className="md:hidden">创建</span>
           </button>
-          <Link to="/agent-group" className="btn-secondary flex items-center gap-2">
+          <Link to="/agent-group" className="btn-secondary flex items-center gap-1.5 text-xs md:text-sm px-3 md:px-4 py-2">
             <Users className="w-4 h-4" />
-            智能体工作群
+            <span className="hidden md:inline">智能体工作群</span>
+            <span className="md:hidden">工作群</span>
           </Link>
         </div>
       </div>
 
       {/* 团队统计 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-primary-600" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+        <div className="card p-3 md:p-4">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
+              <Bot className="w-4 h-4 md:w-5 md:h-5 text-primary-600" />
             </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{agents.length}</div>
-              <div className="text-xs text-gray-500">智能体总数</div>
+            <div className="min-w-0">
+              <div className="text-lg md:text-2xl font-bold text-gray-900 truncate">{agents.length}</div>
+              <div className="text-xs text-gray-500 truncate">智能体总数</div>
             </div>
           </div>
         </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
-              <Activity className="w-5 h-5 text-green-600" />
+        <div className="card p-3 md:p-4">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+              <Activity className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
             </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">
+            <div className="min-w-0">
+              <div className="text-lg md:text-2xl font-bold text-gray-900 truncate">
                 {agents.filter(a => a.status === 'idle').length}
               </div>
-              <div className="text-xs text-gray-500">空闲中</div>
+              <div className="text-xs text-gray-500 truncate">空闲中</div>
             </div>
           </div>
         </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-amber-600" />
+        <div className="card p-3 md:p-4">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 md:w-5 md:h-5 text-amber-600" />
             </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{agents.reduce((sum, a) => sum + (a.skills?.length || 0), 0)}</div>
-              <div className="text-xs text-gray-500">已装配技能</div>
+            <div className="min-w-0">
+              <div className="text-lg md:text-2xl font-bold text-gray-900 truncate">{agents.reduce((sum, a) => sum + (a.skills?.length || 0), 0)}</div>
+              <div className="text-xs text-gray-500 truncate">已装配技能</div>
             </div>
           </div>
         </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-violet-600" />
+        <div className="card p-3 md:p-4">
+          <div className="flex items-center gap-2 md:gap-3">
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-violet-50 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-violet-600" />
             </div>
-            <div>
-              <div className="text-2xl font-bold text-gray-900">{agents.filter(a => a.status === 'busy').length}</div>
-              <div className="text-xs text-gray-500">工作中</div>
+            <div className="min-w-0">
+              <div className="text-lg md:text-2xl font-bold text-gray-900 truncate">{agents.filter(a => a.status === 'busy').length}</div>
+              <div className="text-xs text-gray-500 truncate">工作中</div>
             </div>
           </div>
         </div>
@@ -256,81 +258,81 @@ export default function AgentsPage() {
 
       {/* 智能体卡片网格 */}
       {agents.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <Bot className="w-8 h-8 text-gray-400" />
+        <div className="card p-6 md:p-12 text-center">
+          <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-3 md:mb-4">
+            <Bot className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">暂无AI智能体</h3>
-          <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
-            系统预置了8个职能化AI智能体，可以协助你完成选题、脚本、设计、运营等各环节工作。
+          <h3 className="text-base md:text-lg font-semibold text-gray-900 mb-1 md:mb-2">暂无AI智能体</h3>
+          <p className="text-xs md:text-sm text-gray-500 mb-4 md:mb-6 max-w-md mx-auto">
+            系统预置了8个职能化AI智能体
           </p>
-          <div className="flex items-center justify-center gap-3">
-            <button onClick={handleCreateAgent} className="btn-primary inline-flex items-center gap-2">
+          <div className="flex flex-col md:flex-row items-center justify-center gap-2 md:gap-3">
+            <button onClick={handleCreateAgent} className="btn-primary inline-flex items-center gap-2 w-full md:w-auto justify-center">
               <Plus className="w-4 h-4" />
               创建智能体
             </button>
-            <button onClick={handleResetAgents} disabled={restoring} className="btn-secondary inline-flex items-center gap-2 disabled:opacity-50">
+            <button onClick={handleResetAgents} disabled={restoring} className="btn-secondary inline-flex items-center gap-2 w-full md:w-auto justify-center disabled:opacity-50">
               {restoring ? <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               {restoring ? '恢复中...' : '恢复默认智能体'}
             </button>
           </div>
         </div>
       ) : (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5">
         {agents.map((agent) => {
           const statusInfo = getStatusBadge(agent.status)
           return (
             <div
               key={agent.id}
-              className="card p-5 hover:shadow-lg transition-all cursor-pointer group"
+              className="card p-3 md:p-5 hover:shadow-lg transition-all cursor-pointer group"
               onClick={() => setSelectedAgent(agent)}
             >
               {/* 头像和状态 */}
-              <div className="flex items-start justify-between mb-3">
-                {renderAvatar(agent)}
-                <span className={`badge ${statusInfo.className} flex items-center gap-1`}>
+              <div className="flex items-start justify-between mb-2 md:mb-3">
+                {renderAvatar(agent, 'w-10 h-10 text-xl md:w-14 md:h-14 md:text-2xl')}
+                <span className={`badge ${statusInfo.className} flex items-center gap-1 text-xs`}>
                   <span className={cn('w-1.5 h-1.5 rounded-full', statusInfo.dot)} />
                   {statusInfo.label}
                 </span>
               </div>
 
               {/* 名称和角色 */}
-              <h3 className="font-bold text-gray-900 text-lg mb-0.5 group-hover:text-primary-600 transition-colors">
+              <h3 className="font-bold text-gray-900 text-base md:text-lg mb-0.5 group-hover:text-primary-600 transition-colors truncate">
                 {agent.name}
               </h3>
-              <p className="text-sm text-gray-500 mb-2">{roleLabels[agent.role] || agent.role}</p>
+              <p className="text-xs md:text-sm text-gray-500 mb-1.5 md:mb-2 truncate">{roleLabels[agent.role] || agent.role}</p>
 
               {/* 实时动作文案（工作中时显示） */}
               {agent.status === 'busy' && agent.current_action && (
-                <div className="flex items-center gap-2 mb-3 px-2 py-1.5 bg-amber-50 rounded-lg">
-                  <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin flex-shrink-0" />
+                <div className="flex items-center gap-1.5 mb-2 md:mb-3 px-2 py-1 md:py-1.5 bg-amber-50 rounded-lg">
+                  <Loader2 className="w-3 h-3 md:w-3.5 md:h-3.5 text-amber-500 animate-spin flex-shrink-0" />
                   <span className="text-xs text-amber-700 truncate">{agent.current_action}</span>
                 </div>
               )}
 
               {/* 描述 */}
-              <p className="text-xs text-gray-400 line-clamp-2 mb-3">
+              <p className="text-xs text-gray-400 line-clamp-2 mb-2 md:mb-3 hidden md:block">
                 {agent.description}
               </p>
 
               {/* 技能标签 */}
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {agent.skills?.slice(0, 3).map((skill) => (
-                  <span key={skill.id} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-md">
+              <div className="flex flex-wrap gap-1 md:gap-1.5 mb-2 md:mb-3">
+                {agent.skills?.slice(0, 2).map((skill) => (
+                  <span key={skill.id} className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-md">
                     {skill.name}
                   </span>
                 ))}
-                {agent.skills && agent.skills.length > 3 && (
-                  <span className="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-md">
-                    +{agent.skills.length - 3}
+                {agent.skills && agent.skills.length > 2 && (
+                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-md">
+                    +{agent.skills.length - 2}
                   </span>
                 )}
               </div>
 
               {/* 今日产出 */}
-              <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+              <div className="pt-2 md:pt-3 border-t border-gray-100 flex items-center justify-between">
                 <span className="text-xs text-gray-400">今日产出</span>
-                <span className="text-sm font-semibold text-gray-700">
+                <span className="text-xs md:text-sm font-semibold text-gray-700">
                   {agent.todayRuns || 0} 次
                 </span>
               </div>

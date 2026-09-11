@@ -92,29 +92,29 @@ export default function DashboardPage() {
   ]
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 md:space-y-6 animate-fade-in">
       {/* 欢迎区 */}
-      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-6 text-white relative overflow-hidden">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute right-20 bottom-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2" />
+      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl md:rounded-2xl p-4 md:p-6 text-white relative overflow-hidden">
+        <div className="absolute right-0 top-0 w-48 h-48 md:w-64 md:h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute right-10 md:right-20 bottom-0 w-24 h-24 md:w-32 md:h-32 bg-white/5 rounded-full translate-y-1/2" />
         
         <div className="relative z-10">
-          <h1 className="text-2xl font-bold mb-2">欢迎回来 👋</h1>
-          <p className="text-primary-100 mb-6">
+          <h1 className="text-xl md:text-2xl font-bold mb-1 md:mb-2">欢迎回来 👋</h1>
+          <p className="text-primary-100 text-sm md:text-base mb-4 md:mb-6">
             今天有 {stats?.projectStats?.active || 0} 个项目进行中，继续你的创作吧！
           </p>
           
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 md:flex md:flex-wrap gap-2 md:gap-3">
             {quickActions.map((action, idx) => {
               const Icon = action.icon
               return (
                 <Link
                   key={idx}
                   to={action.path}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white/15 backdrop-blur hover:bg-white/25 rounded-xl transition-colors"
+                  className="flex items-center justify-center md:justify-start gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-white/15 backdrop-blur hover:bg-white/25 rounded-lg md:rounded-xl transition-colors"
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{action.label}</span>
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="text-xs md:text-sm font-medium">{action.label}</span>
                 </Link>
               )
             })}
@@ -123,63 +123,63 @@ export default function DashboardPage() {
       </div>
 
       {/* 数据卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {statCards.map((card, idx) => {
           const Icon = card.icon
           return (
-            <div key={idx} className="card p-5 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-4">
-                <div className={`w-10 h-10 rounded-xl ${card.bg} flex items-center justify-center`}>
-                  <Icon className={`w-5 h-5 bg-gradient-to-br ${card.color} bg-clip-text text-transparent`} style={{ color: 'transparent', backgroundClip: 'text', WebkitBackgroundClip: 'text' }} />
+            <div key={idx} className="card p-3 md:p-5 hover:shadow-md transition-shadow">
+              <div className="flex items-start justify-between mb-2 md:mb-4">
+                <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl ${card.bg} flex items-center justify-center`}>
+                  <Icon className={`w-4 h-4 md:w-5 md:h-5 bg-gradient-to-br ${card.color} bg-clip-text text-transparent`} style={{ color: 'transparent', backgroundClip: 'text', WebkitBackgroundClip: 'text' }} />
                 </div>
-                <TrendingUp className="w-4 h-4 text-green-500" />
+                <TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-green-500 hidden md:block" />
               </div>
-              <div className="text-2xl font-bold text-gray-900 mb-1">{card.value}</div>
-              <div className="text-sm text-gray-500">{card.label}</div>
-              <div className="text-xs text-gray-400 mt-1">{card.subValue}</div>
+              <div className="text-lg md:text-2xl font-bold text-gray-900 mb-0.5 md:mb-1">{card.value}</div>
+              <div className="text-xs md:text-sm text-gray-500">{card.label}</div>
+              <div className="text-xs text-gray-400 mt-0.5 md:mt-1 truncate">{card.subValue}</div>
             </div>
           )
         })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* 进行中的项目 */}
-        <div className="lg:col-span-2 card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900">进行中的项目</h3>
-            <Link to="/projects" className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
-              查看全部 <ChevronRight className="w-4 h-4" />
+        <div className="lg:col-span-2 card p-4 md:p-5">
+          <div className="flex items-center justify-between mb-3 md:mb-4">
+            <h3 className="font-semibold text-gray-900 text-base md:text-lg">进行中的项目</h3>
+            <Link to="/projects" className="text-xs md:text-sm text-primary-600 hover:text-primary-700 flex items-center gap-0.5">
+              查看全部 <ChevronRight className="w-3 h-3 md:w-4 md:h-4" />
             </Link>
           </div>
 
           {activeProjects.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Target className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>暂无进行中的项目</p>
-              <Link to="/projects" className="text-primary-500 text-sm hover:underline mt-2 inline-block">
+            <div className="text-center py-8 md:py-12 text-gray-400">
+              <Target className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-2 md:mb-3 opacity-30" />
+              <p className="text-sm">暂无进行中的项目</p>
+              <Link to="/projects" className="text-primary-500 text-xs md:text-sm hover:underline mt-2 inline-block">
                 创建第一个项目
               </Link>
             </div>
           ) : (
-            <div className="space-y-3">
-              {activeProjects.map((project) => (
+            <div className="space-y-2 md:space-y-3">
+              {activeProjects.slice(0, 3).map((project) => (
                 <Link
                   key={project.id}
                   to={`/projects/${project.id}`}
-                  className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                  className="flex items-center justify-between p-3 md:p-4 bg-gray-50 rounded-lg md:rounded-xl hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-medium">
+                  <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
+                    <div className="w-9 h-9 md:w-10 md:h-10 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-sm md:text-base font-medium flex-shrink-0">
                       {project.title.charAt(0)}
                     </div>
-                    <div>
-                      <h4 className="font-medium text-gray-900">{project.title}</h4>
-                      <p className="text-xs text-gray-500">
-                        当前阶段：{getStageName(project.current_stage)}
+                    <div className="min-w-0 flex-1">
+                      <h4 className="font-medium text-gray-900 truncate text-sm md:text-base">{project.title}</h4>
+                      <p className="text-xs text-gray-500 truncate">
+                        {getStageName(project.current_stage)}
                       </p>
                     </div>
                   </div>
-                  <span className={`badge ${getStatusColor(project.status)}`}>
+                  <span className={`badge ${getStatusColor(project.status)} flex-shrink-0 text-xs`}>
                     {getStatusText(project.status)}
                   </span>
                 </Link>
@@ -189,53 +189,53 @@ export default function DashboardPage() {
         </div>
 
         {/* 今日待办 + Token用量 */}
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-6">
           {/* 今日日程 */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Calendar className="w-5 h-5 text-primary-500" />
-              <h3 className="font-semibold text-gray-900">今日日程</h3>
+          <div className="card p-4 md:p-5">
+            <div className="flex items-center gap-2 mb-3 md:mb-4">
+              <Calendar className="w-4 h-4 md:w-5 md:h-5 text-primary-500" />
+              <h3 className="font-semibold text-gray-900 text-base md:text-lg">今日日程</h3>
             </div>
 
             {todayEvents.length === 0 ? (
-              <div className="text-center py-6 text-gray-400 text-sm">
-                <Clock className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <div className="text-center py-4 md:py-6 text-gray-400 text-sm">
+                <Clock className="w-6 h-6 md:w-8 md:h-8 mx-auto mb-2 opacity-30" />
                 今天没有安排
               </div>
             ) : (
               <div className="space-y-2">
-                {todayEvents.map((event) => (
-                  <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="w-1.5 h-10 bg-primary-500 rounded-full" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{event.title}</p>
-                      <p className="text-xs text-gray-400">{event.type}</p>
+                {todayEvents.slice(0, 3).map((event) => (
+                  <div key={event.id} className="flex items-center gap-3 p-2.5 md:p-3 bg-gray-50 rounded-lg">
+                    <div className="w-1.5 h-8 md:h-10 bg-primary-500 rounded-full flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 truncate">{event.title}</p>
+                      <p className="text-xs text-gray-400 truncate">{event.type}</p>
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            <Link to="/calendar" className="mt-4 block text-center text-sm text-primary-600 hover:text-primary-700">
+            <Link to="/calendar" className="mt-3 md:mt-4 block text-center text-xs md:text-sm text-primary-600 hover:text-primary-700">
               查看完整日历
             </Link>
           </div>
 
           {/* Token用量 */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Zap className="w-5 h-5 text-amber-500" />
-              <h3 className="font-semibold text-gray-900">今日Token用量</h3>
+          <div className="card p-4 md:p-5">
+            <div className="flex items-center gap-2 mb-3 md:mb-4">
+              <Zap className="w-4 h-4 md:w-5 md:h-5 text-amber-500" />
+              <h3 className="font-semibold text-gray-900 text-base md:text-lg">今日Token用量</h3>
             </div>
 
-            <div className="mb-3">
-              <div className="flex justify-between text-sm mb-1">
+            <div className="mb-2 md:mb-3">
+              <div className="flex justify-between text-xs md:text-sm mb-1">
                 <span className="text-gray-500">已使用</span>
                 <span className="font-medium text-gray-900">
                   {formatNumber(stats?.tokenStats?.dailyUsed || 0)} / {formatNumber(stats?.tokenStats?.dailyLimit || 0)}
                 </span>
               </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-1.5 md:h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all"
                   style={{ width: `${Math.min(100, ((stats?.tokenStats?.dailyUsed || 0) / (stats?.tokenStats?.dailyLimit || 1)) * 100)}%` }}

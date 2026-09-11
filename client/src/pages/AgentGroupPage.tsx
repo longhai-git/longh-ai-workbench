@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Users, Send, Smile, AtSign,
   Bot, Loader2, Image as ImageIcon,
-  FileText, Mic
+  FileText, Mic, X, ChevronLeft,
+  Menu
 } from 'lucide-react'
 import api from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
@@ -125,6 +126,7 @@ export default function AgentGroupPage() {
   const [showMention, setShowMention] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
   const [showMembers, setShowMembers] = useState(true)
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false)
   const [agentStatusMap, setAgentStatusMap] = useState<Record<string, { status: string; current_action?: string }>>({})
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -248,8 +250,12 @@ export default function AgentGroupPage() {
         mention_agent_ids: extractMentions(content),
       })
 
-      // 先移除临时用户消息（换成正式的），再逐条添加AI回复（模拟串行打字效果）
-      setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id))
+      // 先替换临时用户消息为正式的
+      setMessages(prev => prev.map(m => 
+        m.id === tempUserMsg.id 
+          ? { ...m, id: res.userMessageId || m.id }
+          : m
+      ))
 
       if (res.responses && res.responses.length > 0) {
         const responses: any[] = res.responses
@@ -274,9 +280,9 @@ export default function AgentGroupPage() {
         }
       }
     } catch (e: any) {
-      // 失败时移除临时消息，显示错误
-      setMessages(prev => prev.filter(m => m.id !== tempUserMsg.id))
-      alert(e.error || '发送失败')
+      // 失败时保留用户消息（后端可能已经保存了），只提示AI回复可能延迟
+      const errorMsg = e.error || e.message || '发送失败'
+      alert(errorMsg + '\\n（用户消息已发送，AI回复可能会稍有延迟，请稍候刷新查看）')
     } finally {
       setSending(false)
       inputRef.current?.focus()
@@ -359,11 +365,31 @@ export default function AgentGroupPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-gray-50 dark:bg-gray-900 -m-6 overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)] bg-gray-50 dark:bg-gray-900 -m-4 md:-m-6 overflow-hidden relative">
+      {/* === 移动端遮罩层 === */}
+      {showMobileSidebar && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setShowMobileSidebar(false)}
+        />
+      )}
+
       {/* === 左侧：群信息（固定一个AI工作群） === */}
-      <div className="w-72 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
+      <div className={cn(
+        'fixed md:relative top-0 left-0 bottom-0 z-50 md:z-auto w-72 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0',
+        'transform transition-transform duration-300 ease-in-out',
+        'md:translate-x-0',
+        showMobileSidebar ? 'translate-x-0' : '-translate-x-full'
+      )}>
         {/* 群信息头部 */}
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700 relative">
+          {/* 移动端关闭按钮 */}
+          <button
+            onClick={() => setShowMobileSidebar(false)}
+            className="absolute top-3 right-3 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 md:hidden transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
           <div className="flex items-center gap-3 mb-3">
             <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center flex-shrink-0">
               <Users className="w-6 h-6 text-white" />
@@ -464,16 +490,23 @@ export default function AgentGroupPage() {
           {activeChat ? (
           <>
             {/* 聊天头部 */}
-            <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">{activeChat.title}</h3>
-                <span className="text-sm text-gray-400 dark:text-gray-500 flex-shrink-0">
+            <div className="h-14 px-3 md:px-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+              <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                {/* 移动端菜单按钮 */}
+                <button
+                  onClick={() => setShowMobileSidebar(true)}
+                  className="p-1.5 -ml-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 md:hidden transition-colors flex-shrink-0"
+                >
+                  <Menu className="w-5 h-5" />
+                </button>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate text-sm md:text-base">{activeChat.title}</h3>
+                <span className="text-xs md:text-sm text-gray-400 dark:text-gray-500 flex-shrink-0">
                   ({agents.length + 1}人)
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                {/* 成员头像堆叠 */}
-                <div className="flex items-center -space-x-1.5 mr-2">
+                {/* 成员头像堆叠（桌面端显示） */}
+                <div className="hidden md:flex items-center -space-x-1.5 mr-2">
                   {agents.slice(0, 5).map(agent => (
                     <div key={agent.id} className="w-7 h-7 rounded-full overflow-hidden border-2 border-white dark:border-gray-800 flex-shrink-0">
                       {isImageAvatar(agent.avatar) ? (
@@ -492,11 +525,18 @@ export default function AgentGroupPage() {
                     </div>
                   )}
                 </div>
+                {/* 移动端成员按钮 */}
+                <button
+                  onClick={() => setShowMobileSidebar(true)}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 md:hidden transition-colors"
+                >
+                  <Users className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
             {/* 消息列表 */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 bg-gray-50 dark:bg-gray-900">
+            <div className="flex-1 overflow-y-auto px-2 md:px-4 py-2 md:py-3 space-y-1 bg-gray-50 dark:bg-gray-900">
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
                   <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
@@ -532,7 +572,7 @@ export default function AgentGroupPage() {
                         {renderAvatarBox(info.avatar, info.role, info.name, 'w-9 h-9 text-base')}
 
                         {/* 消息内容 */}
-                        <div className={cn('flex flex-col max-w-[60%]', info.isUser ? 'items-end' : 'items-start')}>
+                        <div className={cn('flex flex-col max-w-[75%] md:max-w-[60%]', info.isUser ? 'items-end' : 'items-start')}>
                           {/* 名称 */}
                           <span className="text-xs text-gray-500 dark:text-gray-400 mb-0.5 px-1">
                             {info.name}
@@ -567,36 +607,36 @@ export default function AgentGroupPage() {
             </div>
 
             {/* 输入区域 */}
-            <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
+            <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
               {/* 工具栏 */}
-              <div className="flex items-center gap-1 px-3 pt-2">
-                <button className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="表情">
+              <div className="flex items-center gap-0.5 md:gap-1 px-2 md:px-3 pt-2">
+                <button className="p-1.5 md:p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="表情">
                   <Smile className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => { setInputText(inputText + '@'); setShowMention(true); inputRef.current?.focus() }}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="p-1.5 md:p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                   title="@提及"
                 >
                   <AtSign className="w-5 h-5" />
                 </button>
-                <button className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="图片">
+                <button className="p-1.5 md:p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors hidden md:block" title="图片">
                   <ImageIcon className="w-5 h-5" />
                 </button>
-                <button className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="文件">
+                <button className="p-1.5 md:p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors hidden md:block" title="文件">
                   <FileText className="w-5 h-5" />
                 </button>
                 <div className="flex-1" />
-                <button className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="语音">
+                <button className="p-1.5 md:p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors hidden md:block" title="语音">
                   <Mic className="w-5 h-5" />
                 </button>
               </div>
 
               {/* 文本输入 */}
-              <div className="relative px-3 pb-3 pt-1">
+              <div className="relative px-2 md:px-3 pb-2 md:pb-3 pt-1">
                 {/* @提及弹窗 */}
                 {showMention && (
-                  <div className="absolute bottom-full left-3 mb-1 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto z-10">
+                  <div className="absolute bottom-full left-2 md:left-3 mb-1 w-56 md:w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 max-h-48 overflow-y-auto z-10">
                     <div className="px-2 py-1.5 text-xs text-gray-400 dark:text-gray-500 border-b border-gray-100 dark:border-gray-700">
                       选择要@的智能体
                     </div>
@@ -624,7 +664,7 @@ export default function AgentGroupPage() {
                     value={inputText}
                     onChange={handleInputChange}
                     onKeyDown={handleInputKeyDown}
-                    placeholder="输入消息，@智能体定向提问，Enter发送，Shift+Enter换行"
+                    placeholder="输入消息，@智能体提问"
                     rows={1}
                     className="flex-1 resize-none px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-200 focus:bg-white dark:focus:bg-gray-600 transition-all max-h-32"
                     style={{ minHeight: '36px' }}
@@ -633,13 +673,13 @@ export default function AgentGroupPage() {
                     onClick={handleSend}
                     disabled={!inputText.trim() || sending}
                     className={cn(
-                      'px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0',
+                      'px-3 md:px-4 py-2 rounded-lg text-sm font-medium transition-colors flex-shrink-0',
                       inputText.trim() && !sending
                         ? 'bg-green-500 text-white hover:bg-green-600'
                         : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
                     )}
                   >
-                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : '发送'}
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
               </div>

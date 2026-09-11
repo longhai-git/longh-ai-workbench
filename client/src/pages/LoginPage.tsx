@@ -95,25 +95,25 @@ export default function LoginPage() {
       </div>
 
       {/* 右侧表单区 */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-4 md:p-8">
         <div className="w-full max-w-md">
           {/* 移动端Logo */}
-          <div className="lg:hidden flex items-center justify-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg">
+          <div className="lg:hidden flex items-center justify-center gap-3 mb-6 md:mb-10">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-lg md:text-xl">
               L
             </div>
             <div>
-              <h1 className="font-bold text-gray-900">LongH AI</h1>
+              <h1 className="font-bold text-gray-900 text-lg md:text-xl">LongH AI</h1>
               <p className="text-xs text-gray-400">短视频创作工作台</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+          <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-gray-100 p-5 md:p-8">
+            <div className="text-center mb-5 md:mb-8">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-1 md:mb-2">
                 {isRegister ? '创建账号' : '欢迎回来'}
               </h2>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-xs md:text-sm">
                 {isRegister ? '注册后即可体验完整AI创作能力' : '登录你的账号继续创作'}
               </p>
             </div>
