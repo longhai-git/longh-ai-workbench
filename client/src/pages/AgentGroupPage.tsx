@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
-  Users, Send, Plus, Search, MoreVertical, Smile, AtSign,
-  Bot, X, Loader2, ChevronLeft, Settings, Image as ImageIcon,
+  Users, Send, Smile, AtSign,
+  Bot, Loader2, Image as ImageIcon,
   FileText, Mic
 } from 'lucide-react'
 import api from '@/services/api'
@@ -116,18 +116,15 @@ function shouldShowDateSeparator(messages: GroupMessage[], index: number) {
 export default function AgentGroupPage() {
   const { user } = useAuthStore()
   const [agents, setAgents] = useState<Agent[]>([])
-  const [chats, setChats] = useState<GroupChat[]>([])
   const [activeChat, setActiveChat] = useState<GroupChat | null>(null)
   const [messages, setMessages] = useState<GroupMessage[]>([])
   const [inputText, setInputText] = useState('')
   const [loadingAgents, setLoadingAgents] = useState(true)
-  const [loadingChats, setLoadingChats] = useState(true)
+  const [loadingChat, setLoadingChat] = useState(true)
   const [sending, setSending] = useState(false)
   const [showMention, setShowMention] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
   const [showMembers, setShowMembers] = useState(true)
-  const [showNewChat, setShowNewChat] = useState(false)
-  const [newChatTitle, setNewChatTitle] = useState('')
   const [agentStatusMap, setAgentStatusMap] = useState<Record<string, { status: string; current_action?: string }>>({})
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -184,26 +181,24 @@ export default function AgentGroupPage() {
     return () => clearInterval(timer)
   }, [sending, pollAgentStatus])
 
-  // 加载群聊列表
-  const fetchChats = useCallback(async () => {
+  // 加载默认群聊（只有一个AI工作群）
+  const fetchDefaultChat = useCallback(async () => {
     try {
       const res: any = await api.get('/agent-group-chats')
       const list = res.chats || []
-      setChats(list)
-      // 如果有群聊，自动选中第一个
-      if (list.length > 0 && !activeChat) {
+      if (list.length > 0) {
         setActiveChat(list[0])
       }
     } catch (e) {
       console.error(e)
     } finally {
-      setLoadingChats(false)
+      setLoadingChat(false)
     }
-  }, [activeChat])
+  }, [])
 
   useEffect(() => {
-    fetchChats()
-  }, [fetchChats])
+    fetchDefaultChat()
+  }, [fetchDefaultChat])
 
   // 加载消息
   const fetchMessages = useCallback(async (chatId: string) => {
@@ -227,22 +222,6 @@ export default function AgentGroupPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  // 创建新群聊
-  const handleCreateChat = async () => {
-    if (!newChatTitle.trim()) return
-    try {
-      const res: any = await api.post('/agent-group-chats', { title: newChatTitle.trim() })
-      setShowNewChat(false)
-      setNewChatTitle('')
-      // 刷新列表并选中新群
-      await fetchChats()
-      const newChat = { id: res.id, title: newChatTitle, status: 'active', mode: 'discussion', max_rounds: 20, current_round: 0, created_at: new Date().toISOString() } as GroupChat
-      setActiveChat(newChat)
-    } catch (e) {
-      console.error(e)
-    }
-  }
 
   // 发送消息
   const handleSend = async () => {
@@ -379,103 +358,117 @@ export default function AgentGroupPage() {
     }
   }
 
-  // 渲染群聊列表项
-  const renderChatListItem = (chat: GroupChat) => {
-    const isActive = activeChat?.id === chat.id
-    const lastMsg = messages.find(m => m.group_id === chat.id)
-    const memberCount = agents.length + 1
-
-    return (
-      <div
-        key={chat.id}
-        onClick={() => setActiveChat(chat)}
-        className={cn(
-          'flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors border-l-2',
-          isActive ? 'bg-gray-100 dark:bg-gray-700 border-primary-500' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700/50'
-        )}
-      >
-        {/* 群头像 */}
-        <div className="relative w-11 h-11 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center flex-shrink-0">
-          <Users className="w-5 h-5 text-white" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-0.5">
-            <span className={cn('text-sm truncate', isActive ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300')}>
-              {chat.title}
-            </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0 ml-2">
-              {chat.message_count || 0 > 0 ? formatTime(chat.created_at) : ''}
-            </span>
-          </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
-            {chat.message_count && chat.message_count > 0 ? `${chat.message_count}条消息` : '暂无消息'}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-gray-50 dark:bg-gray-900 -m-6 overflow-hidden">
-      {/* === 左侧：群聊列表 === */}
+      {/* === 左侧：群信息（固定一个AI工作群） === */}
       <div className="w-72 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
-        {/* 搜索栏 */}
-        <div className="p-3 border-b border-gray-100 dark:border-gray-700">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
-            <input
-              type="text"
-              placeholder="搜索群聊"
-              className="w-full pl-9 pr-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:outline-none focus:bg-white dark:focus:bg-gray-600 focus:ring-2 focus:ring-primary-200 transition-all"
-            />
+        {/* 群信息头部 */}
+        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center flex-shrink-0">
+              <Users className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
+                {activeChat?.title || 'AI创作工作群'}
+              </h3>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {agents.length + 1}位成员
+              </p>
+            </div>
           </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            8位AI智能体集体协作，头脑风暴
+          </p>
         </div>
 
-        {/* 群聊列表 */}
-        <div className="flex-1 overflow-y-auto">
-          {loadingChats ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 text-gray-400 dark:text-gray-500 animate-spin" />
+        {/* 智能体列表 */}
+        <div className="flex-1 overflow-y-auto py-2">
+          <div className="px-3 py-1.5">
+            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">群成员</span>
+          </div>
+
+          {/* 用户自己 */}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <div className="relative">
+              {isImageAvatar(user?.avatar) ? (
+                <div className="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
+                  <img src={user?.avatar!} alt="" className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-sm font-medium">
+                  {user?.avatar || user?.username?.charAt(0)?.toUpperCase()}
+                </div>
+              )}
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-800" />
             </div>
-          ) : chats.length === 0 ? (
-            <div className="text-center py-8 px-4">
-              <Users className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-              <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">还没有群聊</p>
-              <button
-                onClick={() => setShowNewChat(true)}
-                className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
-              >
-                创建第一个群聊
-              </button>
+            <div className="flex-1 min-w-0">
+              <span className="text-sm text-gray-900 dark:text-gray-100 font-medium truncate block">{user?.username}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">管理员</span>
+            </div>
+          </div>
+
+          {/* 分隔 */}
+          <div className="px-3 py-1.5 mt-2">
+            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">AI智能体 ({agents.length})</span>
+          </div>
+
+          {/* 智能体列表 */}
+          {loadingAgents ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-4 h-4 text-gray-400 dark:text-gray-500 animate-spin" />
             </div>
           ) : (
-            <>
-              {chats.map(renderChatListItem)}
-              {/* 创建新群聊按钮 */}
-              <div
-                onClick={() => setShowNewChat(true)}
-                className="flex items-center gap-3 px-3 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 border-l-2 border-transparent transition-colors"
-              >
-                <div className="w-11 h-11 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center flex-shrink-0">
-                  <Plus className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+            agents.map(agent => {
+              const status = agentStatusMap[agent.id]?.status || agent.status
+              const action = agentStatusMap[agent.id]?.current_action || agent.current_action
+              const isBusy = status === 'busy'
+              return (
+                <div key={agent.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                  <div className="relative">
+                    {renderAvatarBox(agent.avatar, agent.role, agent.name, 'w-9 h-9 text-base')}
+                    <div className={cn(
+                      'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800',
+                      status === 'idle' ? 'bg-green-400' : isBusy ? 'bg-amber-400 animate-pulse' : status === 'error' ? 'bg-red-400' : 'bg-gray-300 dark:bg-gray-600'
+                    )} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm text-gray-900 dark:text-gray-100 truncate block">{agent.name}</span>
+                    {isBusy && action ? (
+                      <span className="text-xs text-amber-600 dark:text-amber-400 truncate block flex items-center gap-1">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin flex-shrink-0" />
+                        {action}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-500 truncate block">{roleLabels[agent.role] || agent.role}</span>
+                    )}
+                  </div>
+                  <span className={cn(
+                    'text-xs px-1.5 py-0.5 rounded flex-shrink-0',
+                    status === 'idle' ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
+                    isBusy ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' :
+                    status === 'error' ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
+                    'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                  )}>
+                    {status === 'idle' ? '空闲' : isBusy ? '工作中' : status === 'error' ? '异常' : '离线'}
+                  </span>
                 </div>
-                <span className="text-sm text-gray-500 dark:text-gray-400">创建新群聊</span>
-              </div>
-            </>
+              )
+            })
           )}
         </div>
       </div>
 
       {/* === 中间：聊天区域 === */}
       <div className="flex-1 flex flex-col min-w-0">
-        {activeChat ? (
+          {activeChat ? (
           <>
             {/* 聊天头部 */}
             <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex-shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate">{activeChat.title}</h3>
                 <span className="text-sm text-gray-400 dark:text-gray-500 flex-shrink-0">
-                  ({agents.length + 1})
+                  ({agents.length + 1}人)
                 </span>
               </div>
               <div className="flex items-center gap-1">
@@ -499,14 +492,6 @@ export default function AgentGroupPage() {
                     </div>
                   )}
                 </div>
-                {/* 成员列表切换 */}
-                <button
-                  onClick={() => setShowMembers(!showMembers)}
-                  className={cn('p-2 rounded-lg transition-colors', showMembers ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700')}
-                  title="群成员"
-                >
-                  <Users className="w-5 h-5" />
-                </button>
               </div>
             </div>
 
@@ -667,140 +652,13 @@ export default function AgentGroupPage() {
                 <Users className="w-10 h-10 text-gray-300 dark:text-gray-600" />
               </div>
               <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">智能体工作群</h3>
-              <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">8个AI智能体集体讨论，头脑风暴，群策群力</p>
-              <button
-                onClick={() => setShowNewChat(true)}
-                className="px-4 py-2 bg-primary-500 text-white rounded-lg text-sm hover:bg-primary-600 transition-colors"
-              >
-                开始群聊
-              </button>
+              <p className="text-sm text-gray-400 dark:text-gray-500">8个AI智能体集体讨论，头脑风暴，群策群力</p>
+              <p className="text-xs text-gray-300 dark:text-gray-600 mt-4">加载中...</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* === 右侧：群成员列表 === */}
-      {showMembers && activeChat && (
-        <div className="w-56 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
-          <div className="h-14 px-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
-            <h4 className="font-medium text-sm text-gray-900 dark:text-gray-100">群成员</h4>
-            <span className="text-xs text-gray-400 dark:text-gray-500">{agents.length + 1}人</span>
-          </div>
-          <div className="flex-1 overflow-y-auto py-2">
-            {/* 用户自己 */}
-            <div className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
-              <div className="relative">
-                {isImageAvatar(user?.avatar) ? (
-                  <div className="w-9 h-9 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700">
-                    <img src={user?.avatar!} alt="" className="w-full h-full object-cover" />
-                  </div>
-                ) : (
-                  <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-sm font-medium">
-                    {user?.avatar || user?.username?.charAt(0)?.toUpperCase()}
-                  </div>
-                )}
-                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white dark:border-gray-800" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="text-sm text-gray-900 dark:text-gray-100 font-medium truncate block">{user?.username}</span>
-                <span className="text-xs text-gray-400 dark:text-gray-500">管理员</span>
-              </div>
-            </div>
-
-            {/* 分隔 */}
-            <div className="px-3 py-1.5 mt-2">
-              <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">AI智能体 ({agents.length})</span>
-            </div>
-
-            {/* 智能体列表 */}
-            {loadingAgents ? (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="w-4 h-4 text-gray-400 dark:text-gray-500 animate-spin" />
-              </div>
-            ) : (
-              agents.map(agent => {
-                const status = agentStatusMap[agent.id]?.status || agent.status
-                const action = agentStatusMap[agent.id]?.current_action || agent.current_action
-                const isBusy = status === 'busy'
-                return (
-                <div key={agent.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                  <div className="relative">
-                    {renderAvatarBox(agent.avatar, agent.role, agent.name, 'w-9 h-9 text-base')}
-                    <div className={cn(
-                      'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800',
-                      status === 'idle' ? 'bg-green-400' : isBusy ? 'bg-amber-400 animate-pulse' : status === 'error' ? 'bg-red-400' : 'bg-gray-300 dark:bg-gray-600'
-                    )} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm text-gray-900 dark:text-gray-100 truncate block">{agent.name}</span>
-                    {isBusy && action ? (
-                      <span className="text-xs text-amber-600 dark:text-amber-400 truncate block flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin flex-shrink-0" />
-                        {action}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400 dark:text-gray-500 truncate block">{roleLabels[agent.role] || agent.role}</span>
-                    )}
-                  </div>
-                  <span className={cn(
-                    'text-xs px-1.5 py-0.5 rounded flex-shrink-0',
-                    status === 'idle' ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400' :
-                    isBusy ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' :
-                    status === 'error' ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400' :
-                    'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                  )}>
-                    {status === 'idle' ? '空闲' : isBusy ? '工作中' : status === 'error' ? '异常' : '离线'}
-                  </span>
-                </div>
-              )})
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* === 新建群聊弹窗 === */}
-      {showNewChat && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowNewChat(false)}
-        >
-          <div
-            className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm p-6 animate-fade-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">新建群聊</h3>
-              <button onClick={() => setShowNewChat(false)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">群聊名称</label>
-              <input
-                type="text"
-                value={newChatTitle}
-                onChange={(e) => setNewChatTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCreateChat() }}
-                placeholder="例如：AI创作工作群"
-                className="input-field"
-                autoFocus
-                maxLength={30}
-              />
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">所有{agents.length}位智能体将自动加入群聊</p>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowNewChat(false)} className="flex-1 btn-outline">取消</button>
-              <button
-                onClick={handleCreateChat}
-                disabled={!newChatTitle.trim()}
-                className="flex-1 btn-primary disabled:opacity-50"
-              >
-                创建群聊
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

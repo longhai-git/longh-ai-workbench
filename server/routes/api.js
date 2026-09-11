@@ -373,17 +373,85 @@ router.put('/pomodoro/config', (req, res) => {
 
 // === 智能体工作群 ===
 
+// 智能体角色设定（system prompt）
+const agentRolePrompts = {
+  project_director: `你是"项目总指挥"，是AI创作团队的负责人。你的名字叫{name}。
+你的职责：把控项目整体方向，协调团队成员，做决策和分配任务。
+你的风格：有大局观，说话有条理，善于总结和引导讨论，经常会分配任务给其他团队成员。
+说话要求：用口语化的中文，简洁有力，每次回复控制在80-150字之间，不要太长。`,
+
+  topic_planner: `你是"选题立项"专家，擅长发现爆款选题。你的名字叫{name}。
+你的职责：研究市场趋势，分析用户喜好，提出有潜力的选题方向。
+你的风格：思维活跃，善于捕捉热点，经常给出多个选题方向供选择。
+说话要求：用口语化的中文，活泼有创意，每次回复控制在80-150字之间。`,
+
+  scriptwriter: `你是"脚本策划"，擅长写爆款短视频脚本。你的名字叫{name}。
+你的职责：负责内容脚本的结构设计、金句打磨和节奏把控。
+你的风格：文字功底好，懂短视频节奏，经常提到钩子、反转、金句等概念。
+说话要求：用口语化的中文，生动有画面感，每次回复控制在80-150字之间。`,
+
+  graphic_designer: `你是"视觉物料"设计师，负责封面和视觉设计。你的名字叫{name}。
+你的职责：设计高点击率的封面图、配图和视觉物料。
+你的风格：对色彩、构图、字体很敏感，经常从视觉角度给出建议。
+说话要求：用口语化的中文，有设计感，每次回复控制在80-150字之间。`,
+
+  video_analyst: `你是"视频分析"专家，擅长拆解对标视频。你的名字叫{name}。
+你的职责：分析爆款视频的结构、数据和规律，为创作提供参考。
+你的风格：数据驱动，理性分析，经常提到完播率、互动率、留存率等指标。
+说话要求：用口语化的中文，专业但易懂，每次回复控制在80-150字之间。`,
+
+  distributor: `你是"平台分发"专家，懂各个平台的玩法。你的名字叫{name}。
+你的职责：制定发布策略，选择平台和发布时间，优化标题标签。
+你的风格：熟悉各平台特性，务实，经常提到抖音、小红书、B站等平台。
+说话要求：用口语化的中文，接地气，每次回复控制在80-150字之间。`,
+
+  operator: `你是"数据复盘"运营，擅长数据分析和优化。你的名字叫{name}。
+你的职责：跟踪内容数据表现，诊断问题，提出优化建议。
+你的风格：细心，善于发现问题，用数据说话，经常给出具体的优化建议。
+说话要求：用口语化的中文，务实有条理，每次回复控制在80-150字之间。`,
+
+  live_planner: `你是"直播策划"专家。你的名字叫{name}。
+你的职责：设计直播主题、流程和话术。
+你的风格：懂直播节奏，善于调动气氛。
+说话要求：用口语化的中文，有感染力，每次回复控制在80-150字之间。`,
+
+  custom: `你是一位AI创作助手。你的名字叫{name}。
+你的职责：帮助用户完成内容创作相关的工作。
+说话要求：用口语化的中文，友好专业，每次回复控制在80-150字之间。`,
+};
+
+// 群聊列表 - 确保用户至少有一个默认群
 router.get('/agent-group-chats', (req, res) => {
-  const chats = db.prepare(`
+  const userId = req.user.id;
+  
+  // 检查是否有群聊，没有则创建默认群
+  let chats = db.prepare(`
     SELECT c.*, 
       (SELECT COUNT(*) FROM agent_group_messages m WHERE m.group_id = c.id) as message_count
     FROM agent_group_chat c 
     WHERE c.user_id = ? 
-    ORDER BY c.created_at DESC LIMIT 20
-  `).all(req.user.id);
+    ORDER BY c.created_at ASC LIMIT 20
+  `).all(userId);
+  
+  if (chats.length === 0) {
+    const defaultId = uuidv4();
+    db.prepare(`
+      INSERT INTO agent_group_chat (id, user_id, title, mode)
+      VALUES (?, ?, 'AI创作工作群', 'discussion')
+    `).run(defaultId, userId);
+    chats = db.prepare(`
+      SELECT c.*, 
+        (SELECT COUNT(*) FROM agent_group_messages m WHERE m.group_id = c.id) as message_count
+      FROM agent_group_chat c 
+      WHERE c.user_id = ? 
+      ORDER BY c.created_at ASC LIMIT 20
+    `).all(userId);
+  }
+  
   res.json({ chats });
 });
 
+// 创建群聊（保留接口，但前端不再使用）
 router.post('/agent-group-chats', (req, res) => {
   const { title, project_id, mode } = req.body;
   const id = uuidv4();
@@ -403,7 +471,7 @@ router.get('/agent-group-chats/:id/messages', (req, res) => {
   res.json({ messages });
 });
 
-// 获取智能体状态列表（用于工作群成员列表实时状态展示）
+// 获取智能体状态列表
 router.get('/agents/status/list', (req, res) => {
   const agents = db.prepare(`
     SELECT id, name, role, avatar, status, current_action, current_task_id, enabled
@@ -420,47 +488,47 @@ function generateActionText(agentRole, content, step) {
     project_director: {
       step1: '正在分析需求',
       step2: '正在拆解任务',
-      step3: '正在分配工作',
+      step3: '正在输出结论',
     },
     topic_planner: {
       step1: '正在调研选题方向',
-      step2: '正在分析选题深度',
-      step3: '正在整理调研结论',
+      step2: '正在分析市场热度',
+      step3: '正在整理选题建议',
     },
     scriptwriter: {
       step1: '正在构思脚本结构',
-      step2: '正在撰写脚本内容',
-      step3: '正在打磨金句爆点',
+      step2: '正在撰写核心内容',
+      step3: '正在打磨表达细节',
     },
     graphic_designer: {
       step1: '正在分析视觉风格',
-      step2: '正在设计封面方案',
-      step3: '正在优化视觉细节',
+      step2: '正在构思设计方案',
+      step3: '正在输出视觉建议',
     },
     video_analyst: {
-      step1: '正在拆解对标视频',
-      step2: '正在分析数据表现',
-      step3: '正在提炼爆款规律',
+      step1: '正在分析对标案例',
+      step2: '正在拆解数据表现',
+      step3: '正在提炼规律总结',
     },
     distributor: {
       step1: '正在分析平台特性',
       step2: '正在制定发布策略',
-      step3: '正在生成发布物料',
+      step3: '正在输出分发建议',
     },
     operator: {
-      step1: '正在分析数据表现',
+      step1: '正在分析数据指标',
       step2: '正在诊断问题原因',
       step3: '正在输出优化建议',
     },
     live_planner: {
       step1: '正在设计直播主题',
       step2: '正在规划直播流程',
-      step3: '正在撰写直播话术',
+      step3: '正在输出策划方案',
     },
     custom: {
-      step1: '正在处理任务',
+      step1: '正在理解需求',
       step2: '正在分析内容',
-      step3: '正在生成结果',
+      step3: '正在生成回复',
     },
   };
   const roleActions = actionMap[agentRole] || actionMap.custom;
@@ -470,6 +538,66 @@ function generateActionText(agentRole, content, step) {
 // 延时函数
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 构建对话历史
+function buildChatHistory(messages, currentAgentName) {
+  let history = '';
+  for (const msg of messages) {
+    if (msg.sender_type === 'user') {
+      history += `用户: ${msg.content}\n`;
+    } else {
+      history += `${msg.sender_name}: ${msg.content}\n`;
+    }
+  }
+  return history;
+}
+
+// 生成智能体回复（调用LLM）
+async function generateAgentReplyLLM(agent, userContent, chatHistory, userId) {
+  try {
+    const { callLLM } = await import('../services/llmService.js');
+    
+    const rolePrompt = agentRolePrompts[agent.role] || agentRolePrompts.custom;
+    const systemPrompt = rolePrompt.replace('{name}', agent.name);
+    
+    const userPrompt = `【群聊上下文】\n${chatHistory}\n【当前用户发言】\n${userContent}\n\n请你以"${agent.name}"的身份，在群聊中回复。注意：\n1. 回复要符合你的角色定位\n2. 结合上下文来回复，不要重复别人说过的话\n3. 用第一人称说话，自然融入群聊\n4. 不要输出markdown格式，直接输出纯文本\n5. 回复简短有力，80-150字左右`;
+    
+    const result = await callLLM(userId, systemPrompt, userPrompt, null);
+    
+    if (result.mock) {
+      // LLM不可用时返回模板回复
+      return getFallbackReply(agent.role);
+    }
+    
+    // 清理回复（去掉可能的引号、markdown等）
+    let reply = result.rawText || '';
+    reply = reply.trim();
+    // 去掉可能的前缀（如"项目总指挥："等）
+    reply = reply.replace(/^[^:：]+[：:]\s*/, '');
+    // 去掉多余换行
+    reply = reply.replace(/\n{3,}/g, '\n\n');
+    
+    return reply || getFallbackReply(agent.role);
+  } catch (err) {
+    console.error('Generate agent reply error:', err);
+    return getFallbackReply(agent.role);
+  }
+}
+
+// 备用回复模板（LLM不可用时）
+function getFallbackReply(role) {
+  const replies = {
+    project_director: `收到你的想法。从整体角度来看这个方向挺有潜力的，我建议先从选题调研入手，把方向再细化一下。大家有什么补充意见吗？`,
+    topic_planner: `这个方向我觉得可以深挖！目前市场上同类内容的反馈都不错，但我们得做出差异化才行。我建议可以从几个不同的角度来切入，你觉得呢？`,
+    scriptwriter: `如果是这个方向的话，脚本可以考虑用"问题-冲突-解决"的经典结构。开头3秒一定要有钩子，中间层层递进，结尾留互动点。需要我出一个详细脚本吗？`,
+    graphic_designer: `视觉上我建议用高对比度的配色方案，封面大字要醒目。可以考虑人物+文字的组合形式，点击率会更高一些。`,
+    video_analyst: `从数据分析角度，我建议先找3-5条同类型对标视频做一下拆解，看看爆款规律，这样我们的内容方向会更精准。`,
+    distributor: `发布层面我建议主做抖音+小红书双平台。抖音流量大，小红书精准度高。发布时间可以选在工作日晚上8-10点的黄金档。`,
+    operator: `数据方面我会持续跟踪，发布后24小时是关键窗口期。完播率和互动率是核心指标，我们可以根据数据快速调整优化。`,
+    live_planner: `直播这块我们可以好好策划一下，选个好主题+好节奏，效果不会差的。`
+  };
+  return replies[role] || '收到你的消息，我会认真思考的。';
 }
 
 router.post('/agent-group-chats/:id/messages', async (req, res) => {
@@ -489,6 +617,13 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
       VALUES (?, ?, 'user', ?, ?, ?, ?)
     `).run(userMsgId, groupId, userId, req.user.username, content, mention_agent_ids ? JSON.stringify(mention_agent_ids) : null);
     
+    // 获取历史消息（用于上下文）
+    const historyMessages = db.prepare(`
+      SELECT * FROM agent_group_messages 
+      WHERE group_id = ? 
+      ORDER BY created_at ASC LIMIT 50
+    `).all(groupId);
+    
     // 获取群内智能体
     let agents = db.prepare("SELECT * FROM agents WHERE user_id = ? AND enabled = 1").all(userId);
     
@@ -507,6 +642,7 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
     
     // 串行处理每个智能体的回复（模拟真人团队协作）
     const responses = [];
+    let accumulatedHistory = buildChatHistory(historyMessages, '');
     
     for (let ai = 0; ai < agents.length; ai++) {
       const agent = agents[ai];
@@ -515,23 +651,23 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
       const action1 = generateActionText(agent.role, content, 'step1');
       db.prepare("UPDATE agents SET status = 'busy', current_action = ?, current_task_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .run(action1, groupId, agent.id);
-      await delay(800 + Math.random() * 500); // 模拟工作耗时
+      await delay(600 + Math.random() * 400);
       
       // 步骤2：更新第二步动作
       const action2 = generateActionText(agent.role, content, 'step2');
       db.prepare("UPDATE agents SET current_action = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .run(action2, agent.id);
-      await delay(600 + Math.random() * 400);
+      await delay(500 + Math.random() * 300);
       
-      // 步骤3：更新第三步动作
+      // 步骤3：调用LLM生成回复
       const action3 = generateActionText(agent.role, content, 'step3');
       db.prepare("UPDATE agents SET current_action = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .run(action3, agent.id);
-      await delay(500 + Math.random() * 300);
       
-      // 完成：生成回复内容并保存
+      // 真正调用LLM生成回复
+      const replyContent = await generateAgentReplyLLM(agent, content, accumulatedHistory, userId);
+      
       const replyId = uuidv4();
-      const replyContent = generateAgentReply(agent, content);
       
       // 智能体之间间隔一下再说话
       if (ai > 0) await delay(400);
@@ -540,6 +676,9 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
         INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content)
         VALUES (?, ?, 'agent', ?, ?, ?)
       `).run(replyId, groupId, agent.id, agent.name, replyContent);
+      
+      // 累加上下文
+      accumulatedHistory += `${agent.name}: ${replyContent}\n`;
       
       // 恢复空闲状态
       db.prepare("UPDATE agents SET status = 'idle', current_action = NULL, current_task_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
@@ -563,20 +702,6 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
     res.status(500).json({ error: '发送失败' });
   }
 });
-
-function generateAgentReply(agent, userContent) {
-  const replies = {
-    project_director: `收到你的想法。从项目整体角度来看，这个方向有一定可行性。我建议桃桃先做一下选题调研，橘子可以开始构思脚本框架。大家有什么补充吗？`,
-    topic_planner: `这个选题方向我觉得可以深挖一下。目前同类内容在市场上反馈不错，但差异化角度还需要打磨。我可以整理3个具体的选题方向供你选择。`,
-    scriptwriter: `如果是这个方向的话，脚本可以考虑用"问题-冲突-解决"的经典结构。开头3秒一定要有钩子，中间层层递进，结尾留互动点。需要我出一个详细脚本吗？`,
-    graphic_designer: `视觉上我建议用高对比度的配色方案，封面大字要醒目。可以考虑人物+文字的组合形式，点击率会更高一些。`,
-    video_analyst: `从数据分析角度，我建议先找3-5条同类型对标视频做一下拆解，看看爆款规律，这样我们的内容方向会更精准。`,
-    distributor: `发布层面我建议主做抖音+小红书双平台。抖音流量大，小红书精准度高。发布时间可以选在工作日晚上8-10点的黄金档。`,
-    operator: `数据方面我会持续跟踪，发布后24小时是关键窗口期。完播率和互动率是核心指标，我们可以根据数据快速调整优化。`,
-    live_planner: `（直播策划能力开发中，敬请期待）`
-  };
-  return replies[agent.role] || '收到你的消息，我会认真思考的。';
-}
 
 // === 管理员后台 ===
 
