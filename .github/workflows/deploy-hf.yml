@@ -2,11 +2,10 @@ name: Deploy to Hugging Face Spaces
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 env:
   HF_SPACE_NAME: longh-ai-workbench
+  TURSO_AUTH_TOKEN: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODkxMDYxNzEsImlkIjoiMDFhMDhmMDktNDIwMS03NzFlLWE4NDgtYTdjYzA4YjNjNGM1Iiwia2lkIjoidlJDemg0QUhFODFPZWMyWWI4RGQ3Sk9qblVYX0pCZk1CTEY2NGZ0YnkxZyIsInJpZCI6IjVjNThjNzM3LTM4NGQtNGE1ZS1iOWVmLTNkYWJmODVjNTc0OCJ9.LKvY5HCEznFv7swMsTxMMwvKJ6NR0UGjUpydb43B30ctMKg012sko_HOc4YSHyvtJsfDfFxlBXvcRjMkn_ipBA
 
 jobs:
   deploy:
@@ -25,7 +24,7 @@ jobs:
       - name: Install huggingface_hub
         run: pip install huggingface_hub
 
-      - name: Create or update HF Space
+      - name: Create HF Space and deploy
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -33,47 +32,29 @@ jobs:
           import os
           from huggingface_hub import HfApi
           
-          api = HfApi(token=os.environ['HF_TOKEN'])
+          token = os.environ['HF_TOKEN']
+          turso_token = os.environ['TURSO_AUTH_TOKEN']
+          
+          api = HfApi(token=token)
           user = api.whoami()['name']
           space_id = f"{user}/longh-ai-workbench"
           
+          # Create Space with Docker SDK
           try:
               api.create_repo(repo_id=space_id, repo_type='space', space_sdk='docker', exist_ok=True)
-              print(f'Space ready: {space_id}')
+              print(f'Space created/verified: {space_id}')
           except Exception as e:
-              print(f'Space creation result: {e}')
+              print(f'Space creation: {e}')
           
-          print(f'Space URL: https://huggingface.co/spaces/{space_id}')
-          PYEOF
-
-      - name: Prepare files for HF Space
-        run: |
-          # Copy README_HF.md as README.md for the Space
-          cp README_HF.md README.md
-          
-          # Set PORT to 7860 in a .env file for HF
-          echo 'PORT=7860' > .env.hf
-
-      - name: Upload to HF Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python3 - << 'PYEOF'
-          import os
-          from huggingface_hub import HfApi
-          
-          api = HfApi(token=os.environ['HF_TOKEN'])
-          user = api.whoami()['name']
-          space_id = f"{user}/longh-ai-workbench"
-          
-          # Upload all files (excluding .git, node_modules, etc.)
+          # Upload all files
           api.upload_folder(
               folder_path='.',
               repo_id=space_id,
               repo_type='space',
-              ignore_patterns=['.git/*', 'node_modules/*', '*/node_modules/*', '.env', '*.log'],
-              commit_message='Deploy from GitHub Actions'
+              ignore_patterns=['.git/*', 'node_modules/*', '*/node_modules/*', '.env', '*.log', '.github/*'],
+              commit_message='Deploy LongH AI Workbench'
           )
+          print('Files uploaded successfully')
           
           # Set environment variables as secrets
           secrets = {
@@ -81,18 +62,20 @@ jobs:
               'NODE_ENV': 'production',
               'JWT_SECRET': 'longh-ai-workbench-jwt-secret-2024',
               'TURSO_DATABASE_URL': 'libsql://workbench-longh-ai.aws-ap-northeast-1.turso.io',
-              'TURSO_AUTH_TOKEN': os.environ.get('TURSO_AUTH_TOKEN', ''),
+              'TURSO_AUTH_TOKEN': turso_token,
               'UPLOAD_DIR': '/app/server/uploads',
           }
           
           for key, value in secrets.items():
-              if value:
-                  try:
-                      api.add_space_secret(repo_id=space_id, key=key, value=value)
-                      print(f'Set secret: {key}')
-                  except Exception as e:
-                      print(f'Secret {key}: {e}')
+              try:
+                  api.add_space_secret(repo_id=space_id, key=key, value=value)
+                  print(f'Set secret: {key}')
+              except Exception as e:
+                  print(f'Secret {key}: {e}')
           
-          print(f'\n✅ Deployment complete!')
+          print(f'\n========================================')
+          print(f'Deployment complete!')
           print(f'Space URL: https://{user}-longh-ai-workbench.hf.space')
+          print(f'Direct URL: https://huggingface.co/spaces/{space_id}')
+          print(f'========================================')
           PYEOF
