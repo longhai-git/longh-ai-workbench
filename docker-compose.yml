@@ -1,0 +1,44 @@
+# ==========================================================================
+# LongH AI Workbench - Docker Compose 编排
+# ==========================================================================
+# 使用方法:
+#   1. 复制 .env.example 为 .env 并修改配置
+#   2. docker compose up -d
+# ==========================================================================
+
+services:
+  workbench:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: longh-workbench
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DB_PATH=/app/server/data/workbench.db
+      - UPLOAD_DIR=/app/server/uploads
+    volumes:
+      # 持久化数据库
+      - workbench-db:/app/server/data
+      # 持久化上传文件
+      - workbench-uploads:/app/server/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  workbench-db:
+  workbench-uploads:

@@ -1,0 +1,50 @@
+# ==========================================================================
+# LongH AI Workbench - Zeabur 模板 (一键部署)
+# ==========================================================================
+# 使用方法:
+#   1. 将此文件推送到 GitHub 仓库
+#   2. 在 Zeabur 控制台 New Project → Deploy from Git
+#   3. 选择此仓库，Zeabur 自动检测 Dockerfile 部署
+#   4. 部署完成后配置环境变量和持久卷
+# ==========================================================================
+
+apiVersion: v2
+id: longh-ai-workbench
+name: LongH AI Workbench
+description: AI内容创作工作台 - 全栈应用（Express + React + SQLite）
+
+services:
+  - id: workbench
+    name: LongH AI Workbench
+    source:
+      type: git
+      branch: main
+    dockerfile:
+      path: Dockerfile
+    ports:
+      - id: web
+        port: 3001
+        type: HTTP
+    volumes:
+      - id: db-data
+        dir: /app/server/data
+      - id: uploads
+        dir: /app/server/uploads
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: DB_PATH
+        value: /app/server/data/workbench.db
+      - key: UPLOAD_DIR
+        value: /app/server/uploads
+      - key: JWT_SECRET
+        type: secret
+        description: JWT加密密钥，请设置为随机字符串（至少32位）
+      - key: ARK_API_KEY
+        type: secret
+        description: 火山引擎 Ark API Key
+      - key: ARK_MODEL_ENDPOINT
+        type: secret
+        description: Ark 模型端点（如 doubao-pro-32k）

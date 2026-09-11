@@ -1,0 +1,21 @@
+# 依赖和构建产物
+client/node_modules
+server/node_modules
+client/dist
+
+# 数据和上传文件
+server/data
+server/uploads
+data/
+
+# 开发和配置文件
+.git
+.gitignore
+.env
+.env.local
+*.md
+*.log
+
+# 脚本
+deploy/
+start.sh

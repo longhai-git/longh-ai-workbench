@@ -1,0 +1,278 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: #f8fafc;
+}
+
+/* 深色模式 body 背景 */
+.dark body {
+  background-color: #0f172a;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 深色模式滚动条 */
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* === 全局深色主题文字颜色覆盖 === */
+/* 确保所有未显式添加 dark: 的元素在深色模式下也可读 */
+
+/* 主标题文字 - gray-900 → gray-100 */
+.dark .text-gray-900 {
+  color: #f3f4f6 !important;
+}
+
+/* gray-800 → gray-200 */
+.dark .text-gray-800 {
+  color: #e5e7eb !important;
+}
+
+/* 次要文字 - gray-700 → gray-300 */
+.dark .text-gray-700 {
+  color: #d1d5db !important;
+}
+
+/* 正文文字 - gray-600 → gray-300 */
+.dark .text-gray-600 {
+  color: #d1d5db !important;
+}
+
+/* 辅助文字 - gray-500 → gray-400 */
+.dark .text-gray-500 {
+  color: #9ca3af !important;
+}
+
+/* 最弱文字 - gray-400 在深色模式下保持不变，已经足够可读 */
+/* 注意：不覆盖 text-gray-300，因为很多元素已显式使用 dark:text-gray-300，
+   覆盖会导致颜色冲突 */
+
+/* === 全局深色主题背景覆盖 === */
+
+/* white 背景 → gray-800 */
+.dark .bg-white {
+  background-color: #1f2937 !important;
+}
+
+/* gray-50 背景 → gray-800 */
+.dark .bg-gray-50 {
+  background-color: #1f2937 !important;
+}
+
+/* gray-100 背景 → gray-700 */
+.dark .bg-gray-100 {
+  background-color: #374151 !important;
+}
+
+/* gray-200 背景 → gray-700 */
+.dark .bg-gray-200 {
+  background-color: #374151 !important;
+}
+
+/* hover 背景覆盖 */
+.dark .hover\:bg-gray-50:hover {
+  background-color: #374151 !important;
+}
+
+.dark .hover\:bg-gray-100:hover {
+  background-color: #374151 !important;
+}
+
+.dark .hover\:bg-gray-200:hover {
+  background-color: #4b5563 !important;
+}
+
+/* === 全局深色主题边框覆盖 === */
+.dark .border-gray-100 {
+  border-color: #374151 !important;
+}
+
+.dark .border-gray-200 {
+  border-color: #374151 !important;
+}
+
+.dark .border-gray-300 {
+  border-color: #4b5563 !important;
+}
+
+/* === 特定语义颜色深色模式覆盖 === */
+/* 蓝色提示框 */
+.dark .bg-blue-50 {
+  background-color: rgba(30, 58, 138, 0.3) !important;
+}
+.dark .text-blue-800 {
+  color: #93c5fd !important;
+}
+.dark .text-blue-700 {
+  color: #93c5fd !important;
+}
+.dark .text-blue-600 {
+  color: #60a5fa !important;
+}
+.dark .border-blue-100 {
+  border-color: rgba(30, 58, 138, 0.5) !important;
+}
+
+/* 琥珀色提示框 */
+.dark .bg-amber-50 {
+  background-color: rgba(120, 53, 15, 0.3) !important;
+}
+.dark .text-amber-700 {
+  color: #fcd34d !important;
+}
+.dark .border-amber-100 {
+  border-color: rgba(120, 53, 15, 0.5) !important;
+}
+
+/* 绿色 */
+.dark .bg-green-50 {
+  background-color: rgba(6, 78, 59, 0.3) !important;
+}
+.dark .text-green-700 {
+  color: #4ade80 !important;
+}
+.dark .text-green-600 {
+  color: #4ade80 !important;
+}
+.dark .border-green-100 {
+  border-color: rgba(6, 78, 59, 0.5) !important;
+}
+
+/* 红色 */
+.dark .bg-red-50 {
+  background-color: rgba(127, 29, 29, 0.3) !important;
+}
+.dark .text-red-700 {
+  color: #f87171 !important;
+}
+.dark .border-red-100 {
+  border-color: rgba(127, 29, 29, 0.5) !important;
+}
+
+/* primary 色 */
+.dark .bg-primary-50 {
+  background-color: rgba(30, 64, 175, 0.3) !important;
+}
+.dark .text-primary-700 {
+  color: #93c5fd !important;
+}
+.dark .text-primary-600 {
+  color: #60a5fa !important;
+}
+.dark .border-primary-500 {
+  border-color: #3b82f6 !important;
+}
+
+/* 工具类 */
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-100;
+}
+
+.dark .card {
+  @apply bg-gray-800 border-gray-700;
+}
+
+.btn-primary {
+  @apply px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors font-medium;
+}
+
+.btn-secondary {
+  @apply px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium;
+}
+
+.dark .btn-secondary {
+  @apply bg-gray-700 text-gray-200 hover:bg-gray-600;
+}
+
+.btn-outline {
+  @apply px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium;
+}
+
+.dark .btn-outline {
+  @apply border-gray-600 text-gray-300 hover:bg-gray-700;
+}
+
+.input-field {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all;
+}
+
+.dark .input-field {
+  @apply bg-gray-800 border-gray-600 text-gray-100;
+}
+
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+}
+
+/* 动画 */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* === select 下拉框深色模式 === */
+.dark select {
+  background-color: #1f2937;
+  color: #f3f4f6;
+}
+
+.dark select option {
+  background-color: #1f2937;
+  color: #f3f4f6;
+}
+
+/* === placeholder 深色模式 === */
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280;
+}
+
+/* === 深色模式分割线 === */
+.dark hr {
+  border-color: #374151;
+}

@@ -1,0 +1,34 @@
+# ==========================================================================
+# Render 部署配置 - LongH AI Workbench
+# ==========================================================================
+# 用法:
+#   1. 将代码推送到 GitHub
+#   2. 在 render.com 创建新服务，选择此仓库
+#   3. Render 会自动检测 render.yaml 并部署
+# ==========================================================================
+
+services:
+  - type: web
+    name: longh-ai-workbench
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: JWT_SECRET
+        sync: false  # 在 Render 控制台手动填写
+      - key: TURSO_DATABASE_URL
+        sync: false  # 在 Render 控制台手动填写
+      - key: TURSO_AUTH_TOKEN
+        sync: false  # 在 Render 控制台手动填写
+      - key: ARK_API_KEY
+        sync: false  # 在 Render 控制台手动填写
+      - key: ARK_MODEL_ENDPOINT
+        sync: false  # 在 Render 控制台手动填写
+      - key: UPLOAD_DIR
+        value: /app/server/uploads

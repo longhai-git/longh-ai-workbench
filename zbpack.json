@@ -1,0 +1,12 @@
+{
+  "dockerfile": {
+    "path": "Dockerfile"
+  },
+  "start_command": "node server.js",
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "3001",
+    "DB_PATH": "/app/server/data/workbench.db",
+    "UPLOAD_DIR": "/app/server/uploads"
+  }
+}
