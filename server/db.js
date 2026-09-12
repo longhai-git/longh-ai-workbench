@@ -4,33 +4,32 @@ import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// 双模式数据库连接
-// 本地开发: 使用 better-sqlite3（本地文件）
-// 生产部署: 使用 libsql（Turso远程数据库）
+// 数据库连接：优先 Turso 远程，失败则降级到本地 SQLite
 let db;
+let usingLocalFallback = false;
 
-if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
-  // 生产模式: 连接 Turso 远程数据库
-  const LibSQL = (await import('libsql')).default;
-  const dbUrl = process.env.TURSO_DATABASE_URL.startsWith('libsql://')
-    ? process.env.TURSO_DATABASE_URL
-    : `libsql://${process.env.TURSO_DATABASE_URL}`;
-  db = new LibSQL(dbUrl, {
-    authToken: process.env.TURSO_AUTH_TOKEN,
-  });
-  console.log('Connected to Turso remote database:', dbUrl);
-} else if (process.env.LIBSQL_URL) {
-  // 兼容 libsql 本地/远程模式
-  const LibSQL = (await import('libsql')).default;
-  db = new LibSQL(process.env.LIBSQL_URL, {
-    authToken: process.env.LIBSQL_AUTH_TOKEN,
-  });
-  console.log('Connected to libSQL database:', process.env.LIBSQL_URL);
-} else {
-  // 本地开发模式: 使用 better-sqlite3
-  const BetterSQLite3 = (await import('better-sqlite3')).default;
+// 预加载模块（顶层 await，ES模块支持）
+let LibSQL = null;
+let BetterSQLite3 = null;
 
-  // 支持环境变量配置数据库路径
+try {
+  LibSQL = (await import('libsql')).default;
+} catch (e) {
+  console.log('libsql module not available');
+}
+
+try {
+  BetterSQLite3 = (await import('better-sqlite3')).default;
+} catch (e) {
+  console.log('better-sqlite3 module not available');
+}
+
+// 本地 SQLite 初始化函数
+function createLocalSQLite() {
+  if (!BetterSQLite3) {
+    throw new Error('better-sqlite3 is not installed');
+  }
+
   const DB_PATH = process.env.DB_PATH
     ? (path.isAbsolute(process.env.DB_PATH) ? process.env.DB_PATH : path.join(__dirname, process.env.DB_PATH))
     : path.join(__dirname, 'data', 'workbench.db');
@@ -40,10 +39,54 @@ if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
     fs.mkdirSync(DB_DIR, { recursive: true });
   }
 
-  db = new BetterSQLite3(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const localDb = new BetterSQLite3(DB_PATH);
+  localDb.pragma('journal_mode = WAL');
+  localDb.pragma('foreign_keys = ON');
   console.log('Connected to local SQLite database:', DB_PATH);
+  return localDb;
+}
+
+if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN && LibSQL) {
+  // 生产模式: 尝试连接 Turso 远程数据库
+  try {
+    const dbUrl = process.env.TURSO_DATABASE_URL.startsWith('libsql://')
+      ? process.env.TURSO_DATABASE_URL
+      : `libsql://${process.env.TURSO_DATABASE_URL}`;
+    const tursoDb = new LibSQL(dbUrl, {
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+
+    // 测试连接是否真的可用
+    let tursoOk = false;
+    try {
+      tursoDb.prepare('SELECT 1 as test').get();
+      tursoOk = true;
+      console.log('Connected to Turso remote database:', dbUrl);
+    } catch (testErr) {
+      console.error('Turso connection test failed, falling back to local SQLite:', testErr.message);
+    }
+
+    if (tursoOk) {
+      db = tursoDb;
+    } else {
+      console.log('Falling back to local SQLite database...');
+      db = createLocalSQLite();
+      usingLocalFallback = true;
+    }
+  } catch (e) {
+    console.error('Failed to initialize Turso, falling back to local SQLite:', e.message);
+    db = createLocalSQLite();
+    usingLocalFallback = true;
+  }
+} else if (process.env.LIBSQL_URL && LibSQL) {
+  // 兼容 libsql 本地/远程模式
+  db = new LibSQL(process.env.LIBSQL_URL, {
+    authToken: process.env.LIBSQL_AUTH_TOKEN,
+  });
+  console.log('Connected to libSQL database:', process.env.LIBSQL_URL);
+} else {
+  // 本地开发模式: 使用 better-sqlite3
+  db = createLocalSQLite();
 }
 
 // 辅助函数：添加缺失的列
