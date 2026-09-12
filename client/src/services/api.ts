@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 30000,
+  timeout: 120000, // 120秒超时（群聊多智能体回复需要较长时间）
 })
 
 // 请求拦截器 - 添加token

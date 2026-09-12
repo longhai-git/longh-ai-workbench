@@ -553,6 +553,62 @@ function buildChatHistory(messages, currentAgentName) {
   return history;
 }
 
+// 并行处理单个智能体回复（带硬超时保护，确保不会卡死）
+async function processAgentReply(agent, idx, userContent, chatHistory, groupId, userId) {
+  try {
+    // 设置状态为工作中
+    const action1 = generateActionText(agent.role, userContent, 'step1');
+    db.prepare("UPDATE agents SET status = 'busy', current_action = ?, current_task_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(action1, groupId, agent.id);
+
+    // 轻微延迟，让前端能看到状态变化（不同智能体错开一点）
+    await delay(200 + idx * 150);
+
+    // 更新第二步动作
+    const action2 = generateActionText(agent.role, userContent, 'step2');
+    db.prepare("UPDATE agents SET current_action = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(action2, agent.id);
+    await delay(200 + idx * 100);
+
+    // 更新第三步动作
+    const action3 = generateActionText(agent.role, userContent, 'step3');
+    db.prepare("UPDATE agents SET current_action = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(action3, agent.id);
+
+    // 调用LLM生成回复，加45秒硬超时保护
+    const replyPromise = generateAgentReplyLLM(agent, userContent, chatHistory, userId);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Agent reply timeout')), 45000)
+    );
+
+    let replyContent;
+    try {
+      replyContent = await Promise.race([replyPromise, timeoutPromise]);
+    } catch (e) {
+      console.error(`Agent ${agent.name} reply failed/timeout:`, e.message);
+      replyContent = getFallbackReply(agent.role, userContent);
+    }
+
+    const replyId = uuidv4();
+    db.prepare(`
+      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content)
+      VALUES (?, ?, 'agent', ?, ?, ?)
+    `).run(replyId, groupId, agent.id, agent.name, replyContent);
+
+    return {
+      id: replyId,
+      agent: { id: agent.id, name: agent.name, role: agent.role, avatar: agent.avatar },
+      content: replyContent
+    };
+  } catch (err) {
+    console.error(`processAgentReply error for ${agent.name}:`, err);
+    // 确保状态恢复
+    db.prepare("UPDATE agents SET status = 'idle', current_action = NULL, current_task_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(agent.id);
+    return null;
+  }
+}
+
 // 生成智能体回复（调用LLM）
 async function generateAgentReplyLLM(agent, userContent, chatHistory, userId) {
   try {
@@ -567,7 +623,7 @@ async function generateAgentReplyLLM(agent, userContent, chatHistory, userId) {
     
     if (result.mock) {
       // LLM不可用时返回模板回复
-      return getFallbackReply(agent.role);
+      return getFallbackReply(agent.role, userContent);
     }
     
     // 清理回复（去掉可能的引号、markdown等）
@@ -578,26 +634,91 @@ async function generateAgentReplyLLM(agent, userContent, chatHistory, userId) {
     // 去掉多余换行
     reply = reply.replace(/\n{3,}/g, '\n\n');
     
-    return reply || getFallbackReply(agent.role);
+    return reply || getFallbackReply(agent.role, userContent);
   } catch (err) {
     console.error('Generate agent reply error:', err);
-    return getFallbackReply(agent.role);
+    return getFallbackReply(agent.role, userContent);
   }
 }
 
 // 备用回复模板（LLM不可用时）
-function getFallbackReply(role) {
+function getFallbackReply(role, userContent = '') {
+  // 根据用户消息的关键词选择不同的回复变体
+  const content = userContent || '';
+  const hasQuestion = content.includes('？') || content.includes('?') || content.includes('怎么') || content.includes('如何') || content.includes('什么');
+  const hasTopic = content.includes('选题') || content.includes('主题') || content.includes('方向');
+  const hasVideo = content.includes('视频') || content.includes('短视频');
+  const hasScript = content.includes('脚本') || content.includes('文案') || content.includes('内容');
+  const hasCover = content.includes('封面') || content.includes('图') || content.includes('视觉');
+  const hasData = content.includes('数据') || content.includes('播放') || content.includes('流量');
+  const hasPublish = content.includes('发布') || content.includes('平台') || content.includes('抖音') || content.includes('小红书');
+  
   const replies = {
-    project_director: `收到你的想法。从整体角度来看这个方向挺有潜力的，我建议先从选题调研入手，把方向再细化一下。大家有什么补充意见吗？`,
-    topic_planner: `这个方向我觉得可以深挖！目前市场上同类内容的反馈都不错，但我们得做出差异化才行。我建议可以从几个不同的角度来切入，你觉得呢？`,
-    scriptwriter: `如果是这个方向的话，脚本可以考虑用"问题-冲突-解决"的经典结构。开头3秒一定要有钩子，中间层层递进，结尾留互动点。需要我出一个详细脚本吗？`,
-    graphic_designer: `视觉上我建议用高对比度的配色方案，封面大字要醒目。可以考虑人物+文字的组合形式，点击率会更高一些。`,
-    video_analyst: `从数据分析角度，我建议先找3-5条同类型对标视频做一下拆解，看看爆款规律，这样我们的内容方向会更精准。`,
-    distributor: `发布层面我建议主做抖音+小红书双平台。抖音流量大，小红书精准度高。发布时间可以选在工作日晚上8-10点的黄金档。`,
-    operator: `数据方面我会持续跟踪，发布后24小时是关键窗口期。完播率和互动率是核心指标，我们可以根据数据快速调整优化。`,
-    live_planner: `直播这块我们可以好好策划一下，选个好主题+好节奏，效果不会差的。`
+    project_director: [
+      `收到你的想法。从整体角度来看这个方向挺有潜力的，我建议先从选题调研入手，把方向再细化一下。大家有什么补充意见吗？`,
+      `嗯，这个想法不错。我来梳理一下整体思路：先明确目标用户，再定内容方向，最后考虑落地执行。桃桃你先说说选题方面的看法？`,
+      `好问题！这个事情我们得系统性地来看。我的建议是分三步走：先调研、再策划、后执行。大家各抒己见，我们一起把方案完善好。`,
+      `你提的这个点很关键。从项目管理角度，我建议我们先对齐一下目标，再拆解具体任务。有没有人想先分享一下自己的想法？`,
+    ],
+    topic_planner: [
+      `这个方向我觉得可以深挖！目前市场上同类内容的反馈都不错，但我们得做出差异化才行。我建议可以从几个不同的角度来切入，你觉得呢？`,
+      `说到选题，我最近一直在关注这个赛道。数据显示这类内容的完播率普遍偏高，但同质化也很严重。我们得找到独特的切入点才行。`,
+      `这个选题方向挺有意思的！我可以从用户痛点、情绪价值、实用干货三个维度各出一个方向供你选择。需要我详细展开吗？`,
+      `从选题角度来看，这个方向有潜力，但还不够精准。我建议再缩小一下范围，瞄准一个更具体的用户群体，这样内容的穿透力会更强。`,
+    ],
+    scriptwriter: [
+      `如果是这个方向的话，脚本可以考虑用"问题-冲突-解决"的经典结构。开头3秒一定要有钩子，中间层层递进，结尾留互动点。需要我出一个详细脚本吗？`,
+      `脚本这块我来想想。我觉得可以走"反差感"路线，开头先抛出一个反常识的观点，抓住用户注意力，中间再展开论证。你觉得这个路子怎么样？`,
+      `内容结构上我建议采用"总-分-总"的框架：开头抛结论，中间讲3个核心要点，结尾升华+互动引导。这样节奏感好，完播率也有保障。`,
+      `写脚本的话，我有个想法：用"故事化"的方式来呈现，把道理融入到具体的场景和人物里，用户更容易代入。要不要我试试写一版出来？`,
+    ],
+    graphic_designer: [
+      `视觉上我建议用高对比度的配色方案，封面大字要醒目。可以考虑人物+文字的组合形式，点击率会更高一些。`,
+      `从设计角度，我觉得这个内容适合走"大字冲击型"封面路线，主标题要足够短、足够炸，配色用对比强烈的颜色。你倾向什么风格？`,
+      `封面设计方面，我建议准备3种不同风格的方案测试一下：大字型、人物表情型、悬念型。不同的内容类型适配不同的封面风格。`,
+      `视觉这块很重要！我建议封面统一一个视觉模板，形成系列感和辨识度。配色、字体、排版都要有规范，这样用户刷到一眼就能认出来。`,
+    ],
+    video_analyst: [
+      `从数据分析角度，我建议先找3-5条同类型对标视频做一下拆解，看看爆款规律，这样我们的内容方向会更精准。`,
+      `这个方向我之前分析过一些案例。数据显示，这类内容的黄金时长是45-60秒，前3秒留存率决定了80%的播放量。我们得在钩子上下功夫。`,
+      `对标分析这块我可以做。通常我会从5个维度拆解：钩子类型、内容结构、节奏把控、互动设计、数据表现。拆解完规律就很清晰了。`,
+      `从数据维度看，这个赛道目前还在上升期，但竞争也在加剧。关键是要找到细分切口，避开红海竞争。我可以帮你做个详细的数据报告。`,
+    ],
+    distributor: [
+      `发布层面我建议主做抖音+小红书双平台。抖音流量大，小红书精准度高。发布时间可以选在工作日晚上8-10点的黄金档。`,
+      `平台分发的话，我建议"一鱼多吃"：一条内容改编成不同形式分发到各个平台。抖音做主阵地，B站做长视频，小红书做图文版。`,
+      `每个平台的调性不一样：抖音要快节奏强钩子，小红书要干货强种草，B站要深度有体系。我们得针对每个平台做差异化改编。`,
+      `发布策略上我有个建议：先在一个平台测试数据，跑通了再复制到其他平台。冷启动阶段可以适当投点DOU+加速测试。`,
+    ],
+    operator: [
+      `数据方面我会持续跟踪，发布后24小时是关键窗口期。完播率和互动率是核心指标，我们可以根据数据快速调整优化。`,
+      `运营这块我来盯着。发布后我会重点监控几个核心指标：5秒完播率、均播时长、点赞率、评论率。哪个数据差就针对性优化。`,
+      `数据复盘很重要。我建议建立一套数据监控体系，每天记录关键指标，每周做一次复盘总结。这样内容才能持续迭代进步。`,
+      `从运营角度，我建议发布后重点关注前1小时的数据表现。如果初始流量跑得好，平台会继续推；不行的话就得赶紧优化标题封面重新发。`,
+    ],
+    live_planner: [
+      `直播这块我们可以好好策划一下，选个好主题+好节奏，效果不会差的。`,
+      `直播策划的关键是节奏：开场5分钟留人，中间每15分钟一个高潮，结尾做转化。我可以帮你出一个完整的直播脚本。`,
+    ],
   };
-  return replies[role] || '收到你的消息，我会认真思考的。';
+  
+  const roleReplies = replies[role] || ['收到你的消息，我会认真思考的。'];
+  
+  // 根据内容特征选择回复变体，增加变化性
+  let index = 0;
+  if (hasQuestion) index += 1;
+  if (hasTopic) index += 1;
+  if (hasVideo) index += 1;
+  if (hasScript) index += 1;
+  if (hasCover) index += 1;
+  if (hasData) index += 1;
+  if (hasPublish) index += 1;
+  
+  // 再加上内容长度的影响
+  index += Math.floor(content.length / 20);
+  
+  index = index % roleReplies.length;
+  return roleReplies[index];
 }
 
 router.post('/agent-group-chats/:id/messages', async (req, res) => {
@@ -640,57 +761,31 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
     const maxAgents = 3;
     agents = agents.slice(0, maxAgents);
     
-    // 串行处理每个智能体的回复（模拟真人团队协作）
+    // 并行处理智能体回复（大幅减少等待时间）
+    const chatHistory = buildChatHistory(historyMessages, '');
+
+    // 为每个智能体创建处理任务
+    const agentTasks = agents.map((agent, idx) => processAgentReply(agent, idx, content, chatHistory, groupId, userId));
+
+    // 并行执行，但按完成顺序收集结果
+    const results = await Promise.allSettled(agentTasks);
+
+    // 按原始顺序整理回复
     const responses = [];
-    let accumulatedHistory = buildChatHistory(historyMessages, '');
-    
-    for (let ai = 0; ai < agents.length; ai++) {
-      const agent = agents[ai];
-      
-      // 步骤1：更新状态为工作中 + 第一步动作
-      const action1 = generateActionText(agent.role, content, 'step1');
-      db.prepare("UPDATE agents SET status = 'busy', current_action = ?, current_task_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(action1, groupId, agent.id);
-      await delay(600 + Math.random() * 400);
-      
-      // 步骤2：更新第二步动作
-      const action2 = generateActionText(agent.role, content, 'step2');
-      db.prepare("UPDATE agents SET current_action = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(action2, agent.id);
-      await delay(500 + Math.random() * 300);
-      
-      // 步骤3：调用LLM生成回复
-      const action3 = generateActionText(agent.role, content, 'step3');
-      db.prepare("UPDATE agents SET current_action = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(action3, agent.id);
-      
-      // 真正调用LLM生成回复
-      const replyContent = await generateAgentReplyLLM(agent, content, accumulatedHistory, userId);
-      
-      const replyId = uuidv4();
-      
-      // 智能体之间间隔一下再说话
-      if (ai > 0) await delay(400);
-      
-      db.prepare(`
-        INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content)
-        VALUES (?, ?, 'agent', ?, ?, ?)
-      `).run(replyId, groupId, agent.id, agent.name, replyContent);
-      
-      // 累加上下文
-      accumulatedHistory += `${agent.name}: ${replyContent}\n`;
-      
-      // 恢复空闲状态
+    const sortedAgents = [];
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === 'fulfilled' && results[i].value) {
+        responses.push(results[i].value);
+        sortedAgents.push(agents[i]);
+      }
+    }
+
+    // 确保所有智能体状态恢复
+    for (const agent of agents) {
       db.prepare("UPDATE agents SET status = 'idle', current_action = NULL, current_task_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .run(agent.id);
-      
-      responses.push({ 
-        id: replyId, 
-        agent: { id: agent.id, name: agent.name, role: agent.role, avatar: agent.avatar }, 
-        content: replyContent 
-      });
     }
-    
+
     res.json({ success: true, userMessageId: userMsgId, responses });
   } catch (err) {
     console.error('Group chat message error:', err);

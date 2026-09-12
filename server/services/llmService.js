@@ -270,16 +270,36 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
     
     console.log(`Calling Volcengine Ark API: ${baseUrl}/chat/completions, model: ${modelName}`);
     
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.api_key}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-    
-    const responseData = await response.json();
+    // 设置30秒超时（覆盖整个fetch+json解析过程）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.api_key}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      throw new Error(`网络请求失败: ${fetchErr.message}`);
+    }
+
+    // 解析响应（也受AbortController保护，如果超时会abort）
+    let responseData;
+    try {
+      responseData = await response.json();
+    } catch (jsonErr) {
+      clearTimeout(timeoutId);
+      throw new Error(`响应解析失败: ${jsonErr.message}`);
+    }
+
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       console.error('Ark API error:', response.status, responseData);
