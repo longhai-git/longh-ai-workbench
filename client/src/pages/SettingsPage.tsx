@@ -33,12 +33,57 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<{ success: boolean; message?: string } | null>(null)
   const [pomodoroWork, setPomodoroWork] = useState(25)
   const [pomodoroRest, setPomodoroRest] = useState(5)
+  const [douyinConfig, setDouyinConfig] = useState({ client_key: '', client_secret: '' })
+  const [douyinStatus, setDouyinStatus] = useState<any>(null)
+  const [douyinSaving, setDouyinSaving] = useState(false)
 
   useEffect(() => {
     fetchProfile()
     fetchLLMConfig()
     fetchPomodoroConfig()
+    fetchDouyinStatus()
   }, [])
+
+  const fetchDouyinStatus = async () => {
+    try {
+      const res: any = await api.get('/douyin/status')
+      setDouyinStatus(res)
+    } catch (e) { /* ignore */ }
+  }
+
+  const saveDouyinConfig = async () => {
+    if (!douyinConfig.client_key || !douyinConfig.client_secret) return
+    setDouyinSaving(true)
+    try {
+      await api.post('/douyin/config', douyinConfig)
+      await fetchDouyinStatus()
+      alert('抖音API配置已保存')
+    } catch (e: any) {
+      alert(e.error || '保存失败')
+    }
+    setDouyinSaving(false)
+  }
+
+  const startDouyinAuth = async () => {
+    try {
+      const res: any = await api.post('/douyin/authorize')
+      if (res.authUrl) {
+        window.open(res.authUrl, '_blank')
+      }
+    } catch (e: any) {
+      alert(e.error || '发起授权失败，请先保存Client Key和Client Secret')
+    }
+  }
+
+  const unbindDouyin = async () => {
+    if (!confirm('确定要解绑抖音账号吗？')) return
+    try {
+      await api.delete('/douyin/unbind')
+      await fetchDouyinStatus()
+    } catch (e: any) {
+      alert(e.error || '解绑失败')
+    }
+  }
 
   const fetchProfile = async () => {
     try {
@@ -476,14 +521,80 @@ export default function SettingsPage() {
             <div className="card p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-2">自媒体平台API</h2>
               <p className="text-sm text-gray-500 mb-6">绑定各平台API，自动同步视频数据</p>
+
+              {/* 回调地址提示 */}
+              <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
+                <p className="text-sm font-medium text-blue-700 mb-1">抖音开放平台回调地址</p>
+                <p className="text-sm text-blue-600 font-mono break-all">https://longhaicm.cn/api/douyin/callback</p>
+                <p className="text-xs text-blue-500 mt-1">将此地址填入抖音开放平台应用的回调地址栏</p>
+              </div>
+
+              {/* 抖音 */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-black flex items-center justify-center text-white text-sm font-bold">抖音</div>
+                    <div>
+                      <h4 className="font-medium text-gray-900">抖音</h4>
+                      <p className="text-xs text-gray-400">
+                        {douyinStatus?.bound ? `已绑定: ${douyinStatus.nickname}` : douyinStatus?.hasConfig ? '已配置，未授权' : '未绑定'}
+                        {douyinStatus?.expired && ' (授权已过期，请重新授权)'}
+                      </p>
+                    </div>
+                  </div>
+                  {douyinStatus?.bound ? (
+                    <button onClick={unbindDouyin} className="btn-outline text-sm py-1.5">解绑</button>
+                  ) : douyinStatus?.hasConfig ? (
+                    <button onClick={startDouyinAuth} className="btn-primary text-sm py-1.5">去授权</button>
+                  ) : null}
+                </div>
+
+                {/* API凭证配置 */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Client Key（应用ID）</label>
+                    <input
+                      type="text"
+                      value={douyinConfig.client_key}
+                      onChange={(e) => setDouyinConfig({ ...douyinConfig, client_key: e.target.value })}
+                      placeholder="在抖音开放平台创建应用后获取"
+                      className="input text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Client Secret（应用密钥）</label>
+                    <input
+                      type="password"
+                      value={douyinConfig.client_secret}
+                      onChange={(e) => setDouyinConfig({ ...douyinConfig, client_secret: e.target.value })}
+                      placeholder="在抖音开放平台创建应用后获取"
+                      className="input text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={saveDouyinConfig}
+                    disabled={douyinSaving || !douyinConfig.client_key || !douyinConfig.client_secret}
+                    className="btn-primary text-sm py-2 w-full"
+                  >
+                    {douyinSaving ? '保存中...' : '保存配置'}
+                  </button>
+                  <p className="text-xs text-gray-400 mt-1">
+                    1. 在抖音开放平台（open.douyin.com）创建应用<br />
+                    2. 回调地址填: https://longhaicm.cn/api/douyin/callback<br />
+                    3. 保存配置后点"去授权"完成绑定
+                  </p>
+                </div>
+              </div>
+
+              {/* 其他平台（待接入） */}
               <div className="space-y-3">
-                {['抖音', '快手', 'B站', '小红书', '视频号'].map((platform) => (
-                  <div key={platform} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                {['快手', 'B站', '小红书', '视频号'].map((platform) => (
+                  <div key={platform} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl opacity-60">
                     <div>
                       <h4 className="font-medium text-gray-900">{platform}</h4>
-                      <p className="text-xs text-gray-400">未绑定</p>
+                      <p className="text-xs text-gray-400">即将支持</p>
                     </div>
-                    <button className="btn-outline text-sm py-1.5">去绑定</button>
+                    <button className="btn-outline text-sm py-1.5" disabled>待接入</button>
                   </div>
                 ))}
               </div>

@@ -15,6 +15,7 @@ import projectRoutes from './routes/projects.js';
 import contentRoutes from './routes/content.js';
 import featureRoutes from './routes/features.js';
 import apiRoutes from './routes/api.js';
+import douyinRoutes from './routes/douyin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -53,6 +54,7 @@ app.use('/api/projects', projectRoutes);
 app.use('/api', contentRoutes);    // /api/agents, /api/skills, /api/topics 等
 app.use('/api', featureRoutes);    // /api/benchmarks, /api/knowledge, /api/messages 等
 app.use('/api', apiRoutes);        // /api/dashboard, /api/pomodoro 等
+app.use('/api/douyin', douyinRoutes); // /api/douyin/callback, /api/douyin/authorize 等
 
 // 前端路由回退
 if (fs.existsSync(clientDist)) {
