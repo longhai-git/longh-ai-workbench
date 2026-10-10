@@ -43,6 +43,114 @@ export function getLLMConfig(userId) {
   return db.prepare('SELECT * FROM llm_configs WHERE user_id = ?').get(userId);
 }
 
+// ============================================================
+// 模型路由策略：复杂任务用主力模型，简单任务用轻量模型
+// ============================================================
+
+// 复杂任务关键词（匹配技能名或智能体角色）—— 使用主力模型
+const COMPLEX_TASK_KEYWORDS = [
+  '脚本', '分镜', '评审', '拆解', '复盘', '对标', '选题策划',
+  '项目综合', '深度', '策略', '方案', '报告', '分析报告',
+  '知识提取', '画像', '工作流', '内容生成', '创作'
+];
+
+// 简单任务关键词 —— 使用轻量模型（低成本、低延迟）
+const SIMPLE_TASK_KEYWORDS = [
+  '标题', '标签', 'tag', '封面建议', '评论', '热点', '翻译',
+  '摘要', '总结', '润色', '改写', '扩写', '缩写', '分类',
+  '提取关键词', 'emoji', '文案', '短句', '一句话', '简介'
+];
+
+/**
+ * 判断任务复杂度
+ * @param {string} taskName - 技能名或智能体角色描述
+ * @param {string} systemPrompt - 系统提示词
+ * @param {string} userPrompt - 用户提示词
+ * @returns {'complex'|'simple'} 任务等级
+ */
+function classifyTaskComplexity(taskName, systemPrompt, userPrompt) {
+  // 对于智能体群聊（taskName 为 null），优先检查用户的实际请求内容
+  if (!taskName) {
+    // 从群聊包装的 prompt 中提取用户真实发言，避免 chatHistory 污染关键词匹配
+    // 包装格式：【群聊上下文】\n{history}\n【当前用户发言】\n{userContent}\n\n请你以...的身份...
+    let realUserContent = userPrompt || '';
+    const marker = '【当前用户发言】';
+    const idx = realUserContent.indexOf(marker);
+    if (idx !== -1) {
+      realUserContent = realUserContent.slice(idx + marker.length);
+      // 截到"请你以"或下一个【】标记之前
+      const cutIdx1 = realUserContent.indexOf('请你以');
+      const cutIdx2 = realUserContent.indexOf('\n【');
+      let cut = -1;
+      if (cutIdx1 !== -1) cut = cutIdx1;
+      if (cutIdx2 !== -1 && (cut === -1 || cutIdx2 < cut)) cut = cutIdx2;
+      if (cut !== -1) realUserContent = realUserContent.slice(0, cut);
+    }
+    const userText = realUserContent.toLowerCase();
+    const simpleInUser = SIMPLE_TASK_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
+    const complexInUser = COMPLEX_TASK_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
+
+    // 用户请求中命中简单关键词且无复杂关键词 → 轻量模型
+    if (simpleInUser && !complexInUser) return 'simple';
+
+    // 长请求 → 复杂
+    if ((userPrompt || '').length > 2000) return 'complex';
+
+    // 默认复杂（保守策略）
+    return 'complex';
+  }
+
+  // 技能执行：检查技能名 + 系统提示词
+  const text = `${taskName || ''} ${systemPrompt || ''}`.toLowerCase();
+
+  // 命中简单关键词 → simple
+  const simpleHit = SIMPLE_TASK_KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+  if (simpleHit) {
+    // 但如果同时命中复杂关键词，以复杂为准
+    const complexHit = COMPLEX_TASK_KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+    if (complexHit) return 'complex';
+    return 'simple';
+  }
+
+  // 命中复杂关键词 → complex
+  const complexHit = COMPLEX_TASK_KEYWORDS.some(kw => text.includes(kw.toLowerCase()));
+  if (complexHit) return 'complex';
+
+  // 根据 prompt 长度辅助判断：长 prompt 通常是复杂任务
+  const promptLen = (userPrompt || '').length;
+  if (promptLen > 2000) return 'complex';
+
+  // 默认复杂（保守策略，核心任务优先保证质量）
+  return 'complex';
+}
+
+/**
+ * 根据任务复杂度选择模型
+ * @param {object} config - 用户LLM配置
+ * @param {string} taskName - 技能名
+ * @param {string} systemPrompt
+ * @param {string} userPrompt
+ * @returns {{model: string, tier: string}} 模型名和层级
+ */
+export function selectModelForTask(config, taskName, systemPrompt, userPrompt) {
+  const mainModel = config.model_name || 'doubao-seed-2-1-pro-250615';
+  const lightModel = config.light_model_name;
+  const lightEnabled = config.light_model_enabled === 1 || config.light_model_enabled === true;
+
+  // 未启用轻量模型或未配置，统一用主力模型
+  if (!lightEnabled || !lightModel) {
+    return { model: mainModel, tier: 'main' };
+  }
+
+  const complexity = classifyTaskComplexity(taskName, systemPrompt, userPrompt);
+
+  if (complexity === 'simple') {
+    return { model: lightModel, tier: 'light' };
+  }
+
+  return { model: mainModel, tier: 'main' };
+}
+
 // 检查token是否超限
 export function checkTokenLimit(userId, estimatedTokens) {
   const config = getLLMConfig(userId);
@@ -65,17 +173,75 @@ export function checkTokenLimit(userId, estimatedTokens) {
   };
 }
 
-// 记录token消耗
-export function recordTokenUsage(userId, inputTokens, outputTokens) {
+// 记录token消耗（支持按模型统计）
+export function recordTokenUsage(userId, inputTokens, outputTokens, modelName = null, modelTier = null) {
   const today = new Date().toISOString().split('T')[0];
   const config = getLLMConfig(userId);
-  
-  if (config.last_reset_date !== today) {
+
+  const total = (inputTokens || 0) + (outputTokens || 0);
+
+  // 更新每日总量
+  if (config && config.last_reset_date !== today) {
     db.prepare('UPDATE llm_configs SET daily_token_used = ?, last_reset_date = ? WHERE user_id = ?')
-      .run(inputTokens + outputTokens, today, userId);
+      .run(total, today, userId);
   } else {
     db.prepare('UPDATE llm_configs SET daily_token_used = daily_token_used + ? WHERE user_id = ?')
-      .run(inputTokens + outputTokens, userId);
+      .run(total, userId);
+  }
+
+  // 记录按模型统计（自动建表，兼容旧环境）
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS token_usage_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      model_name TEXT,
+      model_tier TEXT,
+      token_input INTEGER DEFAULT 0,
+      token_output INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+    const logId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    db.prepare('INSERT INTO token_usage_log (id, user_id, model_name, model_tier, token_input, token_output) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(logId, userId, modelName || 'unknown', modelTier || 'unknown', inputTokens || 0, outputTokens || 0);
+  } catch (e) {
+    console.error('Token usage log error:', e.message);
+  }
+}
+
+// 获取按模型统计的今日用量（含兜底：无明细但有总量时按主力模型回填）
+export function getTodayModelUsage(userId) {
+  const today = new Date().toISOString().split('T')[0];
+  try {
+    const rows = db.prepare(`
+      SELECT model_name, model_tier,
+             SUM(token_input) as token_input,
+             SUM(token_output) as token_output,
+             COUNT(*) as call_count
+      FROM token_usage_log
+      WHERE user_id = ? AND date(created_at) = ?
+      GROUP BY model_name, model_tier
+      ORDER BY (SUM(token_input) + SUM(token_output)) DESC
+    `).all(userId, today);
+
+    // 兜底：如果明细为空但 llm_configs 有今日用量（旧数据迁移场景），
+    // 按主力模型回填一条记录，保证 UI 至少显示主力模型维度
+    if (!rows || rows.length === 0) {
+      const config = getLLMConfig(userId);
+      const dailyUsed = config?.daily_token_used || 0;
+      if (dailyUsed > 0) {
+        return [{
+          model_name: config?.model_name || '主力模型',
+          model_tier: 'main',
+          token_input: Math.round(dailyUsed / 2),
+          token_output: dailyUsed - Math.round(dailyUsed / 2),
+          call_count: 1,
+        }];
+      }
+    }
+    return rows;
+  } catch (e) {
+    // 表不存在时返回空数组
+    return [];
   }
 }
 
@@ -257,8 +423,12 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
   // 真实API调用 - 火山方舟 OpenAI 兼容接口
   try {
     const baseUrl = config.api_endpoint || 'https://ark.cn-beijing.volces.com/api/v3';
-    const modelName = config.model_name || 'doubao-seed-2-1-pro-250615';
-    
+
+    // 模型路由：根据任务复杂度选择主力模型或轻量模型
+    const { model: modelName, tier: modelTier } = selectModelForTask(
+      config, skillName, finalSystemPrompt, userPrompt
+    );
+
     const requestBody = {
       model: modelName,
       messages: [
@@ -267,8 +437,8 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
       ],
       temperature: 0.7,
     };
-    
-    console.log(`Calling Volcengine Ark API: ${baseUrl}/chat/completions, model: ${modelName}`);
+
+    console.log(`[LLM] 调用火山方舟: ${baseUrl}/chat/completions | 模型: ${modelName} | 层级: ${modelTier} | 技能: ${skillName || 'agent-chat'}`);
     
     // 设置30秒超时（覆盖整个fetch+json解析过程）
     const controller = new AbortController();
@@ -313,7 +483,10 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
     
     // 解析返回的JSON
     const parsedData = parseJSONResponse(rawText);
-    
+
+    // 记录 token 用量（按模型统计）
+    recordTokenUsage(userId, tokenInput, tokenOutput, modelName, modelTier);
+
     return {
       success: true,
       data: parsedData || rawText,
@@ -321,7 +494,9 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
       tokenInput,
       tokenOutput,
       mock: false,
-      confidence: 0.8
+      confidence: 0.8,
+      model: modelName,
+      modelTier,
     };
     
   } catch (error) {
@@ -343,6 +518,185 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
   }
 }
 
+// 测试LLM连接 - 不降级mock，返回真实连接结果和明确错误类型
+export async function testLLMConnection(userId, testConfig = null) {
+  // 支持传入临时配置（用户输入但未保存的），否则读数据库
+  const config = testConfig || getLLMConfig(userId);
+
+  if (!config || !config.api_key) {
+    return {
+      success: false,
+      errorType: 'NO_API_KEY',
+      errorMessage: '请先填写 API Key',
+    };
+  }
+
+  const baseUrl = (config.api_endpoint || 'https://ark.cn-beijing.volces.com/api/v3').replace(/\/$/, '');
+  const modelName = config.model_name || 'doubao-seed-2-1-pro-250615';
+
+  const requestBody = {
+    model: modelName,
+    messages: [
+      { role: 'system', content: '你是一个AI助手，请用简洁的语言回答问题。' },
+      { role: 'user', content: '请用一句话介绍你自己。' }
+    ],
+    temperature: 0.7,
+    max_tokens: 50,
+  };
+
+  console.log(`[Test LLM] 调用: ${baseUrl}/chat/completions, model: ${modelName}`);
+
+  // 15秒超时（测试场景不需要太长）
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.api_key}`,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      // AbortError 表示超时
+      if (fetchErr.name === 'AbortError' || fetchErr.message.includes('aborted')) {
+        return {
+          success: false,
+          errorType: 'TIMEOUT',
+          errorMessage: '连接超时，请检查网络或接口地址',
+        };
+      }
+      // 其他网络错误（DNS、连接失败等）
+      return {
+        success: false,
+        errorType: 'NETWORK_ERROR',
+        errorMessage: `连接失败，请检查接口地址是否正确：${fetchErr.message}`,
+      };
+    }
+
+    clearTimeout(timeoutId);
+
+    // 解析响应体
+    let responseData;
+    try {
+      responseData = await response.json();
+    } catch (jsonErr) {
+      return {
+        success: false,
+        errorType: 'PARSE_ERROR',
+        errorMessage: '响应解析失败，请检查接口地址是否正确',
+      };
+    }
+
+    // 按 HTTP 状态码处理
+    if (!response.ok) {
+      const errorCode = responseData.error?.code || responseData.code;
+      const errorMsg = responseData.error?.message || responseData.message || `HTTP ${response.status}`;
+
+      console.error(`[Test LLM] 失败 status=${response.status}, body=`, JSON.stringify(responseData).substring(0, 300));
+
+      // 401 - API Key 无效
+      if (response.status === 401) {
+        return {
+          success: false,
+          errorType: 'UNAUTHORIZED',
+          errorMessage: 'API Key 无效或已过期',
+          detail: errorMsg,
+        };
+      }
+
+      // 404 - 模型接入点 ID 错误
+      if (response.status === 404) {
+        return {
+          success: false,
+          errorType: 'NOT_FOUND',
+          errorMessage: '模型接入点 ID 错误，请到火山方舟控制台检查',
+          detail: errorMsg,
+        };
+      }
+
+      // 余额不足判断：火山方舟余额不足通常返回 400 或 429，错误码含 InsufficientBalance/QuotaExhausted
+      const balanceErrorCodes = ['InsufficientBalance', 'InsufficientFunds', 'QuotaExhausted', 'BalanceExceeded', 'AccountBalanceInsufficient'];
+      const balanceKeywords = ['余额不足', 'insufficient balance', 'insufficient funds', 'quota exceeded', 'balance'];
+      const isBalanceError =
+        balanceErrorCodes.includes(errorCode) ||
+        balanceKeywords.some(k => errorMsg.toLowerCase().includes(k.toLowerCase()));
+
+      if (isBalanceError) {
+        return {
+          success: false,
+          errorType: 'INSUFFICIENT_BALANCE',
+          errorMessage: '火山方舟账户余额不足，请充值',
+          detail: errorMsg,
+        };
+      }
+
+      // 429 - 频率限制
+      if (response.status === 429) {
+        return {
+          success: false,
+          errorType: 'RATE_LIMIT',
+          errorMessage: '请求频率过高，请稍后再试',
+          detail: errorMsg,
+        };
+      }
+
+      // 400 - 其他请求错误
+      if (response.status === 400) {
+        return {
+          success: false,
+          errorType: 'BAD_REQUEST',
+          errorMessage: `请求参数错误：${errorMsg}`,
+        };
+      }
+
+      // 其他 5xx 服务器错误
+      if (response.status >= 500) {
+        return {
+          success: false,
+          errorType: 'SERVER_ERROR',
+          errorMessage: `火山方舟服务异常（${response.status}），请稍后重试`,
+          detail: errorMsg,
+        };
+      }
+
+      // 未归类的错误
+      return {
+        success: false,
+        errorType: 'UNKNOWN',
+        errorMessage: `连接失败（${response.status}）：${errorMsg}`,
+      };
+    }
+
+    // 成功
+    const rawText = responseData.choices?.[0]?.message?.content || '';
+    const usage = responseData.usage || {};
+
+    return {
+      success: true,
+      response: rawText,
+      tokenInput: usage.prompt_tokens || 0,
+      tokenOutput: usage.completion_tokens || 0,
+      model: modelName,
+    };
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error('[Test LLM] 未知异常:', error.message);
+    return {
+      success: false,
+      errorType: 'UNKNOWN',
+      errorMessage: `连接失败：${error.message}`,
+    };
+  }
+}
+
 // 预估token消耗
 export function estimateTokenCost(systemPrompt, userPrompt, skillWorkflow) {
   const baseInput = systemPrompt.length / 2 + userPrompt.length / 2;
@@ -356,4 +710,4 @@ export function estimateTokenCost(systemPrompt, userPrompt, skillWorkflow) {
   };
 }
 
-export default { callLLM, parseJSONResponse, getLLMConfig, checkTokenLimit, recordTokenUsage, estimateTokenCost };
+export default { callLLM, parseJSONResponse, getLLMConfig, checkTokenLimit, recordTokenUsage, estimateTokenCost, testLLMConnection, selectModelForTask, getTodayModelUsage };

@@ -27,10 +27,11 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile')
   const [profile, setProfile] = useState<any>({})
   const [llmConfig, setLlmConfig] = useState<any>({})
+  const [modelUsage, setModelUsage] = useState<any[]>([])
   const [showApiKey, setShowApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean; message?: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ success: boolean; message?: string; suggestion?: string; errorType?: string } | null>(null)
   const [pomodoroWork, setPomodoroWork] = useState(25)
   const [pomodoroRest, setPomodoroRest] = useState(5)
   const [douyinConfig, setDouyinConfig] = useState({ client_key: '', client_secret: '' })
@@ -96,6 +97,7 @@ export default function SettingsPage() {
     try {
       const res: any = await api.get('/llm-config')
       setLlmConfig(res.config || {})
+      setModelUsage(res.modelUsage || [])
     } catch (e) { /* ignore */ }
   }
 
@@ -139,16 +141,41 @@ export default function SettingsPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      // 先保存当前配置
-      await api.put('/llm-config', llmConfig)
-      // 然后调用测试接口
-      const res: any = await api.post('/llm-config/test', {
-        prompt: '请用一句话介绍你自己。'
-      })
+      // 调用测试接口：仅传入用户新输入/修改过的字段，未改的由后端用已保存配置
+      const testPayload: any = {
+        model_name: llmConfig.model_name,
+        api_endpoint: llmConfig.api_endpoint,
+      }
+      if (llmConfig.api_key) {
+        testPayload.api_key = llmConfig.api_key
+      }
+      const res: any = await api.post('/llm-config/test', testPayload)
       if (res.success) {
-        setTestResult({ success: true, message: `模型响应正常，消耗 ${res.tokenInput + res.tokenOutput} tokens` })
+        setTestResult({
+          success: true,
+          message: `✓ 连接成功！模型「${res.model}」响应正常，消耗 ${res.tokenInput + res.tokenOutput} tokens`,
+        })
       } else {
-        setTestResult({ success: false, message: res.error || '未知错误' })
+        // 错误类型对应的建议操作
+        const suggestions: Record<string, string> = {
+          UNAUTHORIZED: '请检查 API Key 是否复制正确，或重新生成',
+          NOT_FOUND: '请在火山方舟控制台 → 在线推理 → 接入点列表 中确认接入点 ID',
+          TIMEOUT: '请检查接口地址格式（应以 /api/v3 结尾），或稍后重试',
+          NETWORK_ERROR: '请检查接口地址是否能正常访问',
+          INSUFFICIENT_BALANCE: '请前往火山方舟控制台充值后重试',
+          RATE_LIMIT: '请稍等片刻后重新测试',
+          BAD_REQUEST: '请检查请求参数是否正确',
+          SERVER_ERROR: '火山方舟服务可能暂时不可用，请稍后重试',
+          PARSE_ERROR: '接口返回数据格式异常，请检查接口地址',
+          NO_API_KEY: '请在上方填写 API Key 后再测试',
+        }
+        const suggestion = suggestions[res.errorType] || '请检查配置后重试'
+        setTestResult({
+          success: false,
+          message: `${res.error}`,
+          suggestion,
+          errorType: res.errorType,
+        })
       }
     } catch (e: any) {
       setTestResult({ success: false, message: e.error || e.message || '连接失败' })
@@ -334,7 +361,7 @@ export default function SettingsPage() {
                       type={showApiKey ? 'text' : 'password'}
                       value={llmConfig.api_key || ''}
                       onChange={(e) => setLlmConfig({ ...llmConfig, api_key: e.target.value })}
-                      placeholder="例如：ark-xxxxxxxxxxxxxxxxxxxxxxxx"
+                      placeholder={llmConfig.hasApiKey ? '（已配置，留空则继续使用原 Key）' : '例如：ark-xxxxxxxxxxxxxxxxxxxxxxxx'}
                       className="input-field pr-10"
                     />
                     <button
@@ -388,6 +415,143 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-400 mt-1">当日消耗达到上限后，所有AI任务将暂停，次日自动重置</p>
                 </div>
 
+                {/* 今日Token用量（按模型维度） */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800">今日 Token 用量</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">按模型维度统计，新增模型会自动显示</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-blue-700">
+                        {Number(llmConfig.daily_token_used || 0).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        / {(llmConfig.daily_token_limit || 500000).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 进度条 */}
+                  <div className="w-full bg-blue-100 rounded-full h-2 mb-4 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, ((llmConfig.daily_token_used || 0) / (llmConfig.daily_token_limit || 500000)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+
+                  {/* 各模型明细：始终展示主力+轻量两行，确保用户看到两个模型维度 */}
+                  {(() => {
+                    const groupBy = (tier: string) => modelUsage.filter((u: any) => u.model_tier === tier)
+                    const sum = (arr: any[]) => arr.reduce((acc: number, u: any) => acc + (u.token_input || 0) + (u.token_output || 0), 0)
+                    const cnt = (arr: any[]) => arr.reduce((acc: number, u: any) => acc + (u.call_count || 0), 0)
+                    const inputSum = (arr: any[]) => arr.reduce((acc: number, u: any) => acc + (u.token_input || 0), 0)
+                    const outputSum = (arr: any[]) => arr.reduce((acc: number, u: any) => acc + (u.token_output || 0), 0)
+                    const firstName = (arr: any[]) => arr.map((u: any) => u.model_name).filter(Boolean)[0]
+
+                    const mainArr = groupBy('main')
+                    const lightArr = groupBy('light')
+                    const otherArr = modelUsage.filter((u) => u.model_tier !== 'main' && u.model_tier !== 'light')
+
+                    const rows = [
+                      { label: '主力模型', color: 'bg-blue-100 text-blue-700', arr: mainArr },
+                      { label: '轻量模型', color: 'bg-green-100 text-green-700', arr: lightArr },
+                      ...otherArr.map((u) => ({
+                        label: u.model_tier || '其他',
+                        color: 'bg-gray-100 text-gray-700',
+                        arr: [u],
+                      })),
+                    ]
+
+                    return (
+                      <div className="space-y-2">
+                        {rows.map((r, idx) => {
+                          const total = sum(r.arr)
+                          const callCount = cnt(r.arr)
+                          const modelName = firstName(r.arr) || '—'
+                          return (
+                            <div key={idx} className="bg-white rounded-lg border border-gray-200 p-3">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-2">
+                                  <span className={`inline-block px-1.5 py-0.5 text-xs rounded font-medium ${r.color}`}>
+                                    {r.label}
+                                  </span>
+                                  <span className="text-xs font-mono text-gray-600 truncate max-w-[200px]" title={modelName}>
+                                    {modelName}
+                                  </span>
+                                </div>
+                                <span className="text-sm font-semibold text-gray-800">
+                                  {Number(total).toLocaleString()}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-gray-500">
+                                <span>调用 {callCount} 次 · 输入 {Number(inputSum(r.arr)).toLocaleString()} · 输出 {Number(outputSum(r.arr)).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+                </div>
+
+                {/* 轻量模型分流配置 */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800">轻量模型分流</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">简单任务（标题/标签/摘要等）自动使用低成本模型，降低 Token 消耗</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!llmConfig.light_model_enabled}
+                        onChange={(e) => setLlmConfig({ ...llmConfig, light_model_enabled: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-300 peer-checked:bg-primary-600 rounded-full transition-colors relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                    </label>
+                  </div>
+
+                  {llmConfig.light_model_enabled && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">轻量模型 (接入点ID)</label>
+                        <input
+                          type="text"
+                          value={llmConfig.light_model_name || ''}
+                          onChange={(e) => setLlmConfig({ ...llmConfig, light_model_name: e.target.value })}
+                          placeholder="例如：doubao-1-5-lite-xxxxxxxx 或 doubao-seed-1-6-250615"
+                          className="input-field text-sm"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                          建议选用 Lite / Seed 等低成本模型，用于标题生成、标签提取、简单摘要等任务
+                        </p>
+                      </div>
+
+                      {/* 路由规则说明 */}
+                      <div className="bg-white rounded-lg border border-gray-200 p-3">
+                        <p className="text-xs font-medium text-gray-700 mb-2">📋 自动分流规则</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="inline-block px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium mb-1">主力模型</span>
+                            <p className="text-gray-600">脚本创作、分镜设计、项目评审、视频拆解、数据复盘、对标分析、知识提取</p>
+                          </div>
+                          <div>
+                            <span className="inline-block px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium mb-1">轻量模型</span>
+                            <p className="text-gray-600">标题优化、标签生成、封面建议、评论分析、摘要总结、润色改写、热点追踪</p>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">
+                          提示：复杂任务优先保证质量，统一使用主力模型；简单任务自动分流到轻量模型以节省成本。
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* 全局公共约束Prompt */}
                 <div className="mt-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -416,7 +580,7 @@ export default function SettingsPage() {
                   </button>
                   <button
                     onClick={handleTestLLM}
-                    disabled={testing || !llmConfig.api_key}
+                    disabled={testing || (!llmConfig.api_key && !llmConfig.hasApiKey)}
                     className="btn-outline flex items-center gap-2 disabled:opacity-50"
                   >
                     {testing ? (
@@ -429,12 +593,26 @@ export default function SettingsPage() {
                 </div>
 
                 {testResult && (
-                  <div className={`p-3 rounded-xl text-sm ${
-                    testResult.success 
-                      ? 'bg-green-50 border border-green-100 text-green-700' 
-                      : 'bg-red-50 border border-red-100 text-red-700'
+                  <div className={`p-4 rounded-xl text-sm ${
+                    testResult.success
+                      ? 'bg-green-50 border border-green-100'
+                      : 'bg-red-50 border border-red-100'
                   }`}>
-                    {testResult.success ? '✓ 连接成功！AI模型响应正常。' : `✗ 连接失败：${testResult.message}`}
+                    <div className="flex items-start gap-2">
+                      <span className={testResult.success ? 'text-green-600' : 'text-red-600'}>
+                        {testResult.success ? '✓' : '✗'}
+                      </span>
+                      <div className="flex-1">
+                        <p className={testResult.success ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
+                          {testResult.success ? testResult.message : `连接失败：${testResult.message}`}
+                        </p>
+                        {!testResult.success && testResult.suggestion && (
+                          <p className="text-red-600/80 text-xs mt-1.5 leading-relaxed">
+                            <span className="font-medium">建议：</span>{testResult.suggestion}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

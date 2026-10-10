@@ -8,7 +8,7 @@ router.use(authMiddleware);
 
 // === 仪表板数据 ===
 
-router.get('/dashboard/stats', (req, res) => {
+router.get('/dashboard/stats', async (req, res) => {
   const userId = req.user.id;
   
   // 项目统计
@@ -43,9 +43,17 @@ router.get('/dashboard/stats', (req, res) => {
   
   // Token用量
   const llmConfig = db.prepare('SELECT daily_token_limit, daily_token_used FROM llm_configs WHERE user_id = ?').get(userId);
+  let modelUsage = [];
+  try {
+    const { getTodayModelUsage } = await import('../services/llmService.js');
+    modelUsage = getTodayModelUsage(userId);
+  } catch (e) {
+    console.error('getTodayModelUsage error:', e.message);
+  }
   const tokenStats = {
     dailyLimit: llmConfig?.daily_token_limit || 500000,
-    dailyUsed: llmConfig?.daily_token_used || 0
+    dailyUsed: llmConfig?.daily_token_used || 0,
+    modelUsage,
   };
   
   // 今日待办
@@ -105,19 +113,29 @@ router.put('/user-info', (req, res) => {
   res.json({ success: true });
 });
 
-// 获取LLM配置
-router.get('/llm-config', (req, res) => {
-  const config = db.prepare('SELECT provider, api_endpoint, model_name, daily_token_limit, daily_token_used, global_constraint_prompt FROM llm_configs WHERE user_id = ?').get(req.user.id);
+// 获取LLM配置（含今日按模型统计的Token用量）
+router.get('/llm-config', async (req, res) => {
+  const config = db.prepare('SELECT provider, api_endpoint, model_name, daily_token_limit, daily_token_used, global_constraint_prompt, light_model_name, light_model_enabled FROM llm_configs WHERE user_id = ?').get(req.user.id);
   // 不返回api_key
   const hasApiKey = !!db.prepare('SELECT api_key FROM llm_configs WHERE user_id = ?').get(req.user.id)?.api_key;
-  res.json({ config: { ...config, hasApiKey } });
+
+  // 今日按模型维度统计的Token用量
+  let modelUsage = [];
+  try {
+    const { getTodayModelUsage } = await import('../services/llmService.js');
+    modelUsage = getTodayModelUsage(req.user.id);
+  } catch (e) {
+    console.error('getTodayModelUsage error:', e.message);
+  }
+
+  res.json({ config: { ...config, hasApiKey }, modelUsage });
 });
 
 // 更新LLM配置
 router.put('/llm-config', (req, res) => {
-  const { provider, api_key, api_endpoint, model_name, daily_token_limit, global_constraint_prompt } = req.body;
+  const { provider, api_key, api_endpoint, model_name, daily_token_limit, global_constraint_prompt, light_model_name, light_model_enabled } = req.body;
   const existing = db.prepare('SELECT id FROM llm_configs WHERE user_id = ?').get(req.user.id);
-  
+
   const fields = [];
   const values = [];
   if (provider !== undefined) { fields.push('provider = ?'); values.push(provider); }
@@ -126,6 +144,8 @@ router.put('/llm-config', (req, res) => {
   if (model_name !== undefined) { fields.push('model_name = ?'); values.push(model_name); }
   if (daily_token_limit !== undefined) { fields.push('daily_token_limit = ?'); values.push(daily_token_limit); }
   if (global_constraint_prompt !== undefined) { fields.push('global_constraint_prompt = ?'); values.push(global_constraint_prompt); }
+  if (light_model_name !== undefined) { fields.push('light_model_name = ?'); values.push(light_model_name); }
+  if (light_model_enabled !== undefined) { fields.push('light_model_enabled = ?'); values.push(light_model_enabled ? 1 : 0); }
   
   if (existing) {
     fields.push('updated_at = CURRENT_TIMESTAMP');
@@ -144,27 +164,36 @@ router.put('/llm-config', (req, res) => {
 // 测试LLM连接
 router.post('/llm-config/test', async (req, res) => {
   try {
-    const { prompt } = req.body;
-    const { callLLM } = await import('../services/llmService.js');
-    
-    const result = await callLLM(
-      req.user.id,
-      '你是一个AI助手，请用简洁的语言回答问题。',
-      prompt || '请用一句话介绍你自己。',
-      null
-    );
-    
-    if (result.mock) {
-      res.json({ 
-        success: false, 
-        error: result.fallbackReason || 'API调用失败，当前使用模拟数据。请检查API Key和模型配置是否正确。' 
-      });
-    } else {
+    // 支持前端传入临时配置（用户输入但未保存的），未传的字段回退到数据库已保存的配置
+    const { api_key, api_endpoint, model_name } = req.body;
+    const { getLLMConfig, testLLMConnection } = await import('../services/llmService.js');
+
+    const savedConfig = getLLMConfig(req.user.id);
+
+    // 合并：传入的值优先，未传的用已保存的
+    const testConfig = {
+      api_key: api_key || savedConfig?.api_key,
+      api_endpoint: api_endpoint || savedConfig?.api_endpoint,
+      model_name: model_name || savedConfig?.model_name,
+    };
+
+    const result = await testLLMConnection(req.user.id, testConfig);
+
+    if (result.success) {
       res.json({
         success: true,
-        response: result.rawText,
+        response: result.response,
         tokenInput: result.tokenInput,
         tokenOutput: result.tokenOutput,
+        model: result.model,
+      });
+    } else {
+      // 返回明确的错误类型和用户友好提示
+      res.json({
+        success: false,
+        errorType: result.errorType,
+        error: result.errorMessage,
+        detail: result.detail || null,
       });
     }
   } catch (err) {
@@ -581,24 +610,39 @@ async function processAgentReply(agent, idx, userContent, chatHistory, groupId, 
       setTimeout(() => reject(new Error('Agent reply timeout')), 45000)
     );
 
-    let replyContent;
+    let llmResult;
     try {
-      replyContent = await Promise.race([replyPromise, timeoutPromise]);
+      llmResult = await Promise.race([replyPromise, timeoutPromise]);
     } catch (e) {
       console.error(`Agent ${agent.name} reply failed/timeout:`, e.message);
-      replyContent = getFallbackReply(agent.role, userContent);
+      llmResult = {
+        reply: getFallbackReply(agent.role, userContent),
+        tokenInput: 0,
+        tokenOutput: 0,
+        model: 'timeout',
+        modelTier: 'timeout',
+      };
     }
+
+    const replyContent = llmResult.reply || llmResult;
+    const tokenInput = llmResult.tokenInput || 0;
+    const tokenOutput = llmResult.tokenOutput || 0;
+    const modelUsed = llmResult.model || 'unknown';
 
     const replyId = uuidv4();
     db.prepare(`
-      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content)
-      VALUES (?, ?, 'agent', ?, ?, ?)
-    `).run(replyId, groupId, agent.id, agent.name, replyContent);
+      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content, token_input, token_output, model_used)
+      VALUES (?, ?, 'agent', ?, ?, ?, ?, ?, ?)
+    `).run(replyId, groupId, agent.id, agent.name, replyContent, tokenInput, tokenOutput, modelUsed);
 
     return {
       id: replyId,
       agent: { id: agent.id, name: agent.name, role: agent.role, avatar: agent.avatar },
-      content: replyContent
+      content: replyContent,
+      tokenInput,
+      tokenOutput,
+      model: modelUsed,
+      modelTier: llmResult.modelTier || 'main',
     };
   } catch (err) {
     console.error(`processAgentReply error for ${agent.name}:`, err);
@@ -609,23 +653,29 @@ async function processAgentReply(agent, idx, userContent, chatHistory, groupId, 
   }
 }
 
-// 生成智能体回复（调用LLM）
+// 生成智能体回复（调用LLM）— 返回 { reply, tokenInput, tokenOutput, model, modelTier }
 async function generateAgentReplyLLM(agent, userContent, chatHistory, userId) {
   try {
     const { callLLM } = await import('../services/llmService.js');
-    
+
     const rolePrompt = agentRolePrompts[agent.role] || agentRolePrompts.custom;
     const systemPrompt = rolePrompt.replace('{name}', agent.name);
-    
+
     const userPrompt = `【群聊上下文】\n${chatHistory}\n【当前用户发言】\n${userContent}\n\n请你以"${agent.name}"的身份，在群聊中回复。注意：\n1. 回复要符合你的角色定位\n2. 结合上下文来回复，不要重复别人说过的话\n3. 用第一人称说话，自然融入群聊\n4. 不要输出markdown格式，直接输出纯文本\n5. 回复简短有力，80-150字左右`;
-    
+
     const result = await callLLM(userId, systemPrompt, userPrompt, null);
-    
+
     if (result.mock) {
       // LLM不可用时返回模板回复
-      return getFallbackReply(agent.role, userContent);
+      return {
+        reply: getFallbackReply(agent.role, userContent),
+        tokenInput: 0,
+        tokenOutput: 0,
+        model: 'mock',
+        modelTier: 'mock',
+      };
     }
-    
+
     // 清理回复（去掉可能的引号、markdown等）
     let reply = result.rawText || '';
     reply = reply.trim();
@@ -633,11 +683,23 @@ async function generateAgentReplyLLM(agent, userContent, chatHistory, userId) {
     reply = reply.replace(/^[^:：]+[：:]\s*/, '');
     // 去掉多余换行
     reply = reply.replace(/\n{3,}/g, '\n\n');
-    
-    return reply || getFallbackReply(agent.role, userContent);
+
+    return {
+      reply: reply || getFallbackReply(agent.role, userContent),
+      tokenInput: result.tokenInput || 0,
+      tokenOutput: result.tokenOutput || 0,
+      model: result.model || 'unknown',
+      modelTier: result.modelTier || 'main',
+    };
   } catch (err) {
     console.error('Generate agent reply error:', err);
-    return getFallbackReply(agent.role, userContent);
+    return {
+      reply: getFallbackReply(agent.role, userContent),
+      tokenInput: 0,
+      tokenOutput: 0,
+      model: 'error',
+      modelTier: 'error',
+    };
   }
 }
 

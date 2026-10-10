@@ -248,5 +248,8 @@ export interface GroupMessage {
   sender_name?: string
   content: string
   mention_agent_ids?: string
+  token_input?: number
+  token_output?: number
+  model_used?: string
   created_at: string
 }

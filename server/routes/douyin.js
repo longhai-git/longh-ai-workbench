@@ -6,7 +6,58 @@ import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
 
 // 抖音开放平台配置
-// 回调地址: https://longhaicm.cn/api/douyin/callback
+// OAuth回调地址: https://longhaicm.cn/api/douyin/callback
+// Webhook地址: https://longhaicm.cn/api/douyin/webhook
+
+/**
+ * 抖音Webhook验证 + 事件推送接收
+ * 抖音开放平台 Webhooks 请求网址填: https://longhaicm.cn/api/douyin/webhook
+ *
+ * 抖音验证请求格式：
+ * {"event": "verify_webhook", "client_key": "xxx", "content": {"challenge": 12345}}
+ * 需要解析 content.challenge 值，返回 text 格式的 JSON: {"challenge": 12345}
+ * 注意：返回Content-Type必须是text/plain，不能用application/json
+ */
+router.post('/webhook', (req, res) => {
+  const body = req.body || {};
+  console.log('[Douyin Webhook] 收到请求:', JSON.stringify(body).substring(0, 500));
+
+  // CHALLENGE 验证：抖音验证URL有效性时发送
+  // challenge可能在顶层，也可能在 content.challenge 里
+  let challenge = null;
+  if (body.event === 'verify_webhook' && body.content?.challenge) {
+    challenge = body.content.challenge;
+  } else if (body.challenge) {
+    challenge = body.challenge;
+  } else if (body.content?.challenge) {
+    challenge = body.content.challenge;
+  }
+
+  if (challenge !== null && challenge !== undefined) {
+    console.log('[Douyin Webhook] CHALLENGE验证，返回challenge:', challenge);
+    // 抖音要求返回 text 格式的 JSON 数据，不能用 res.json()
+    return res.type('text/plain').send(JSON.stringify({ challenge }));
+  }
+
+  // 事件推送处理
+  if (body.event || body.header?.event) {
+    const eventType = body.event || body.header?.event;
+    console.log('[Douyin Webhook] 事件推送:', eventType);
+    // 这里可以根据事件类型做不同处理
+  }
+
+  // 默认返回成功
+  res.type('text/plain').send(JSON.stringify({ success: true }));
+});
+
+// GET方式的Webhook验证（部分平台用GET验证）
+router.get('/webhook', (req, res) => {
+  const { challenge } = req.query;
+  if (challenge) {
+    return res.json({ challenge });
+  }
+  res.json({ success: true });
+});
 
 /**
  * 抖音OAuth授权回调
@@ -50,14 +101,21 @@ router.get('/callback', async (req, res) => {
 
     const tokenData = await tokenRes.json();
 
-    if (tokenData.error || !tokenData.access_token) {
-      console.error('Douyin token exchange failed:', tokenData);
-      return res.redirect(`/settings/platforms?error=${encodeURIComponent('授权失败: ' + (tokenData.error?.description || '未知错误'))}`);
+    // 抖音API返回格式: { data: { access_token, open_id, error_code, ... }, message: "success" }
+    // error_code: 0 表示成功
+    const tokenInfo = tokenData.data || tokenData;
+    const errorCode = tokenInfo.error_code;
+    const hasError = (errorCode !== undefined && errorCode !== 0) || !tokenInfo.access_token;
+
+    if (hasError) {
+      console.error('Douyin token exchange failed:', JSON.stringify(tokenData));
+      const errMsg = tokenInfo.description || tokenData.message || '未知错误';
+      return res.redirect(`/settings/platforms?error=${encodeURIComponent('授权失败: ' + errMsg)}`);
     }
 
-    const { access_token, expires_in, refresh_token, open_id } = tokenData;
+    const { access_token, expires_in, refresh_token, open_id } = tokenInfo;
 
-    // 获取用户信息
+    // 获取用户信息（抖音返回格式: { data: { nickname, ... }, message: "success" }）
     const userInfoRes = await fetch('https://open.douyin.com/oauth/userinfo/', {
       headers: {
         'access-token': access_token,
@@ -65,8 +123,9 @@ router.get('/callback', async (req, res) => {
       },
     });
     const userInfo = await userInfoRes.json();
+    const userInfoData = userInfo.data || userInfo;
 
-    const nickname = userInfo.data?.nickname || '抖音用户';
+    const nickname = userInfoData.nickname || userInfoData.screen_name || '抖音用户';
 
     // 保存/更新授权信息到数据库
     const existing = db.prepare('SELECT id FROM platform_accounts WHERE platform = ? AND user_id = ?')
@@ -111,7 +170,7 @@ router.post('/authorize', authMiddleware, (req, res) => {
   }
 
   const redirectUri = encodeURIComponent(`${process.env.BASE_URL || 'https://longhaicm.cn'}/api/douyin/callback`);
-  const authUrl = `https://open.douyin.com/platform/oauth/connect/?client_key=${config.client_key}&response_type=code&scope=${encodeURIComponent('user_info,video.create,video.data')}&redirect_uri=${redirectUri}&state=${userId}`;
+  const authUrl = `https://open.douyin.com/platform/oauth/connect/?client_key=${config.client_key}&response_type=code&scope=${encodeURIComponent('trial.whitelist,user_info,video.create,video.data')}&redirect_uri=${redirectUri}&state=${userId}`;
 
   res.json({ authUrl });
 });

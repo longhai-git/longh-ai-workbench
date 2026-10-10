@@ -145,10 +145,9 @@ export async function executeSkill(skillId, inputData, userId, agentId = null, p
     }
     
     const duration = Date.now() - startTime;
-    
-    // 记录token消耗
-    recordTokenUsage(userId, totalTokenInput, totalTokenOutput);
-    
+
+    // token 消耗已在 callLLM 内部按模型逐次记录，此处无需重复调用
+
     // 更新执行记录
     db.prepare(`
       UPDATE skill_runs 

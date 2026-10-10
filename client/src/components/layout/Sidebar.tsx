@@ -25,7 +25,7 @@ interface NavItem {
 }
 
 const mainNav: NavItem[] = [
-  { path: '/dashboard', label: '仪表板', icon: LayoutDashboard },
+  { path: '/dashboard', label: '数据总览', icon: LayoutDashboard },
   { path: '/projects', label: '项目看板', icon: Kanban, badge: '核心' },
 ]
 

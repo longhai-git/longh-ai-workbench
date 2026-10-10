@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import {
   Users, Send, Smile, AtSign,
   Bot, Loader2, Image as ImageIcon,
   FileText, Mic, X, ChevronLeft,
-  Menu
+  Menu, Copy, ThumbsUp, ThumbsDown,
+  Cpu, Coins, MoreHorizontal, Share2,
+  MessageSquarePlus, Check
 } from 'lucide-react'
 import api from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
@@ -34,6 +36,135 @@ const roleLabels: Record<string, string> = {
   operator: '数据复盘',
   live_planner: '直播策划',
   custom: '自定义',
+}
+
+// 格式化时间为「今天 HH:MM」或「昨天 HH:MM」或「MM-DD HH:MM」
+function formatMsgTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const msgDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diffDays = Math.floor((today.getTime() - msgDate.getTime()) / 86400000)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  if (diffDays === 0) return `今天 ${hh}:${mm}`
+  if (diffDays === 1) return `昨天 ${hh}:${mm}`
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${hh}:${mm}`
+}
+
+// 模型名称简化显示
+function shortModelName(model: string): string {
+  if (!model) return '—'
+  // ep-20260901180040-jsx77 -> 取后8位
+  if (model.startsWith('ep-')) return model.slice(-12)
+  return model.length > 20 ? model.slice(0, 18) + '…' : model
+}
+
+// 智能体消息操作栏组件
+function MessageActions({ msg }: { msg: GroupMessage }) {
+  const [copied, setCopied] = useState(false)
+  const [liked, setLiked] = useState(false)
+  const [disliked, setDisliked] = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleLike = () => {
+    setLiked(!liked)
+    if (!liked) setDisliked(false)
+  }
+
+  const handleDislike = () => {
+    setDisliked(!disliked)
+    if (!disliked) setLiked(false)
+  }
+
+  const totalTokens = (msg.token_input || 0) + (msg.token_output || 0)
+
+  const iconBtn = (onClick: () => void, icon: ReactNode, active?: boolean, title?: string, disabled?: boolean) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        'p-1 rounded transition-colors',
+        disabled
+          ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+          : active
+            ? 'text-primary-500'
+            : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+      )}
+    >
+      {icon}
+    </button>
+  )
+
+  return (
+    <div className="flex items-center gap-0.5 mt-1 px-1 flex-wrap">
+      {/* 复制 */}
+      {iconBtn(handleCopy,
+        copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />,
+        copied, copied ? '已复制' : '复制'
+      )}
+
+      {/* 喜欢 */}
+      {iconBtn(handleLike,
+        <ThumbsUp className="w-3.5 h-3.5" />,
+        liked, liked ? '已点赞' : '喜欢'
+      )}
+
+      {/* 不喜欢 */}
+      {iconBtn(handleDislike,
+        <ThumbsDown className="w-3.5 h-3.5" />,
+        disliked, disliked ? '已标记' : '不喜欢'
+      )}
+
+      {/* 在新对话中继续 — 后续开发 */}
+      {iconBtn(() => {},
+        <MessageSquarePlus className="w-3.5 h-3.5" />,
+        false, '在新对话中继续（即将推出）', true
+      )}
+
+      {/* 分享 — 后续开发 */}
+      {iconBtn(() => {},
+        <Share2 className="w-3.5 h-3.5" />,
+        false, '分享（即将推出）', true
+      )}
+
+      {/* 分隔线 */}
+      <span className="w-px h-3 bg-gray-200 dark:bg-gray-600 mx-1" />
+
+      {/* Token 消耗 + 模型信息 */}
+      <span className="flex items-center gap-2 text-[11px] text-gray-400 dark:text-gray-500">
+        <span className="flex items-center gap-0.5" title={`输入 ${msg.token_input || 0} / 输出 ${msg.token_output || 0}`}>
+          <Coins className="w-3 h-3" />
+          {totalTokens} tokens
+        </span>
+        <span className="flex items-center gap-0.5" title={msg.model_used || ''}>
+          <Cpu className="w-3 h-3" />
+          {shortModelName(msg.model_used || '')}
+        </span>
+      </span>
+
+      {/* 分隔线 */}
+      <span className="w-px h-3 bg-gray-200 dark:bg-gray-600 mx-1" />
+
+      {/* 更多 — 后续开发 */}
+      {iconBtn(() => {},
+        <MoreHorizontal className="w-3.5 h-3.5" />,
+        false, '更多（即将推出）', true
+      )}
+
+      {/* 时间 */}
+      <span className="text-[11px] text-gray-400 dark:text-gray-500 ml-auto">
+        {formatMsgTime(msg.created_at)}
+      </span>
+    </div>
+  )
 }
 
 function isImageAvatar(avatar?: string | null) {
@@ -270,6 +401,9 @@ export default function AgentGroupPage() {
             sender_id: r.agent.id,
             sender_name: r.agent.name,
             content: r.content,
+            token_input: r.tokenInput || 0,
+            token_output: r.tokenOutput || 0,
+            model_used: r.model || '',
             created_at: new Date().toISOString(),
           }
           setMessages(prev => [...prev, agentMsg])
@@ -586,10 +720,16 @@ export default function AgentGroupPage() {
                           )}>
                             {msg.content}
                           </div>
-                          {/* 时间 */}
-                          <span className="text-xs text-gray-300 dark:text-gray-600 mt-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {formatTime(msg.created_at)}
-                          </span>
+                          {/* 操作栏：仅智能体消息显示 */}
+                          {!info.isUser && (
+                            <MessageActions msg={msg} />
+                          )}
+                          {/* 用户消息时间 */}
+                          {info.isUser && (
+                            <span className="text-xs text-gray-300 dark:text-gray-600 mt-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {formatTime(msg.created_at)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

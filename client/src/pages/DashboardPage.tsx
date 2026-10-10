@@ -55,7 +55,7 @@ export default function DashboardPage() {
       value: stats?.projectStats?.total || 0,
       subValue: `${stats?.projectStats?.active || 0} 个进行中`,
       icon: Target,
-      color: 'from-blue-500 to-blue-600',
+      color: 'text-blue-500',
       bg: 'bg-blue-50',
     },
     {
@@ -63,7 +63,7 @@ export default function DashboardPage() {
       value: stats?.topicStats?.total || 0,
       subValue: `${stats?.topicStats?.candidate || 0} 个候选`,
       icon: Lightbulb,
-      color: 'from-amber-500 to-orange-500',
+      color: 'text-amber-500',
       bg: 'bg-amber-50',
     },
     {
@@ -71,7 +71,7 @@ export default function DashboardPage() {
       value: stats?.videoStats?.total || 0,
       subValue: `${formatNumber(stats?.videoStats?.totalViews || 0)} 总播放`,
       icon: Video,
-      color: 'from-pink-500 to-rose-500',
+      color: 'text-pink-500',
       bg: 'bg-pink-50',
     },
     {
@@ -79,7 +79,7 @@ export default function DashboardPage() {
       value: stats?.agentStats?.total || 0,
       subValue: `${stats?.agentStats?.idle || 0} 个空闲`,
       icon: Bot,
-      color: 'from-violet-500 to-purple-600',
+      color: 'text-violet-500',
       bg: 'bg-violet-50',
     },
   ]
@@ -130,7 +130,7 @@ export default function DashboardPage() {
             <div key={idx} className="card p-3 md:p-5 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-2 md:mb-4">
                 <div className={`w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl ${card.bg} flex items-center justify-center`}>
-                  <Icon className={`w-4 h-4 md:w-5 md:h-5 bg-gradient-to-br ${card.color} bg-clip-text text-transparent`} style={{ color: 'transparent', backgroundClip: 'text', WebkitBackgroundClip: 'text' }} />
+                  <Icon className={`w-4 h-4 md:w-5 md:h-5 ${card.color}`} />
                 </div>
                 <TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-green-500 hidden md:block" />
               </div>
@@ -243,7 +243,55 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <p className="text-xs text-gray-400">
+            {/* 按模型维度统计：始终显示主力+轻量两行，确保用户看到两个模型维度 */}
+            {(() => {
+              const usage = stats?.tokenStats?.modelUsage || []
+              // 按 tier 分组：main/light/other；同 tier 多模型累加
+              const groupBy = (tier: string) => usage.filter((u: any) => u.model_tier === tier)
+              const sum = (arr: any[]) => arr.reduce((acc: number, u: any) => acc + (u.token_input || 0) + (u.token_output || 0), 0)
+              const cnt = (arr: any[]) => arr.reduce((acc: number, u: any) => acc + (u.call_count || 0), 0)
+
+              const mainArr = groupBy('main')
+              const lightArr = groupBy('light')
+              const otherArr = usage.filter((u: any) => u.model_tier !== 'main' && u.model_tier !== 'light')
+
+              const rows = [
+                { tier: 'main', label: '主力模型', color: 'bg-blue-100 text-blue-700', arr: mainArr },
+                { tier: 'light', label: '轻量模型', color: 'bg-green-100 text-green-700', arr: lightArr },
+                ...otherArr.map((u: any) => ({
+                  tier: u.model_tier || 'other',
+                  label: u.model_tier || '其他',
+                  color: 'bg-gray-100 text-gray-700',
+                  arr: [u],
+                })),
+              ]
+
+              return (
+                <div className="space-y-1.5 mt-3">
+                  {rows.map((r, idx) => {
+                    const total = sum(r.arr)
+                    const callCount = cnt(r.arr)
+                    return (
+                      <div key={idx} className="flex items-center justify-between text-xs md:text-sm">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`inline-block px-1.5 py-0.5 rounded font-medium text-xs ${r.color}`}>
+                            {r.label}
+                          </span>
+                          <span className="text-gray-500 truncate">
+                            {callCount} 次
+                          </span>
+                        </div>
+                        <span className="font-medium text-gray-900 ml-2 flex-shrink-0">
+                          {formatNumber(total)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
+            <p className="text-xs text-gray-400 mt-2 md:mt-3">
               所有AI调用消耗的Token计入火山方舟账号
             </p>
           </div>

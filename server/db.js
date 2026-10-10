@@ -111,6 +111,24 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// 为已有 users 表添加 phone/email 列（迁移）
+addColumnIfMissing('users', 'phone', 'TEXT');
+addColumnIfMissing('users', 'email', 'TEXT');
+
+// 密码重置验证码表
+db.exec(`
+CREATE TABLE IF NOT EXISTS password_reset_codes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  code TEXT NOT NULL,
+  contact_type TEXT NOT NULL DEFAULT 'phone',
+  contact_value TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)`);
+
 // 认证令牌表
 db.exec(`
 CREATE TABLE IF NOT EXISTS auth_tokens (
@@ -427,6 +445,13 @@ try {
   if (!colNames.includes('global_constraint_prompt')) {
     db.prepare("ALTER TABLE llm_configs ADD COLUMN global_constraint_prompt TEXT").run();
   }
+  // 轻量模型配置（简单任务分流使用，降低成本）
+  if (!colNames.includes('light_model_name')) {
+    db.prepare("ALTER TABLE llm_configs ADD COLUMN light_model_name TEXT").run();
+  }
+  if (!colNames.includes('light_model_enabled')) {
+    db.prepare("ALTER TABLE llm_configs ADD COLUMN light_model_enabled INTEGER DEFAULT 0").run();
+  }
 } catch (e) {
   console.log('LLM configs migration skipped:', e.message);
 }
@@ -604,9 +629,29 @@ CREATE TABLE IF NOT EXISTS agent_group_messages (
   sender_name TEXT,
   content TEXT NOT NULL,
   mention_agent_ids TEXT,
+  token_input INTEGER DEFAULT 0,
+  token_output INTEGER DEFAULT 0,
+  model_used TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (group_id) REFERENCES agent_group_chat(id) ON DELETE CASCADE
 )`);
+
+// agent_group_messages 字段迁移（为旧表添加新列）
+try {
+  const msgCols = db.prepare("PRAGMA table_info(agent_group_messages)").all();
+  const msgColNames = msgCols.map(c => c.name);
+  if (!msgColNames.includes('token_input')) {
+    db.prepare("ALTER TABLE agent_group_messages ADD COLUMN token_input INTEGER DEFAULT 0").run();
+  }
+  if (!msgColNames.includes('token_output')) {
+    db.prepare("ALTER TABLE agent_group_messages ADD COLUMN token_output INTEGER DEFAULT 0").run();
+  }
+  if (!msgColNames.includes('model_used')) {
+    db.prepare("ALTER TABLE agent_group_messages ADD COLUMN model_used TEXT").run();
+  }
+} catch (e) {
+  console.log('agent_group_messages migration skipped:', e.message);
+}
 
 // 自媒体平台API配置
 db.exec(`

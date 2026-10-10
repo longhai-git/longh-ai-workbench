@@ -8,6 +8,8 @@ interface AuthState {
   isAuthenticated: boolean
   login: (username: string, password: string) => Promise<void>
   register: (username: string, password: string) => Promise<void>
+  forgotPasswordSendCode: (contact: string) => Promise<{ code: string; maskedContact: string }>
+  forgotPasswordReset: (contact: string, code: string, newPassword: string) => Promise<void>
   logout: () => void
   checkAuth: () => void
   setUser: (user: User) => void
@@ -30,6 +32,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem('token', res.token)
     localStorage.setItem('user', JSON.stringify(res.user))
     set({ user: res.user, token: res.token, isAuthenticated: true })
+  },
+
+  forgotPasswordSendCode: async (contact: string) => {
+    const res: any = await api.post('/auth/forgot-password/send-code', { contact })
+    return { code: res.code, maskedContact: res.maskedContact }
+  },
+
+  forgotPasswordReset: async (contact: string, code: string, newPassword: string) => {
+    await api.post('/auth/forgot-password/reset', { contact, code, newPassword })
   },
 
   logout: () => {
