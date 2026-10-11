@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { callLLM, parseJSONResponse } from '../services/llmService.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -154,6 +155,129 @@ router.post('/knowledge/chats', (req, res) => {
     VALUES (?, ?, ?, ?, ?)
   `).run(id, req.user.id, role || 'user', content, extracted_entries ? JSON.stringify(extracted_entries) : null);
   res.json({ id });
+});
+
+// 知识对话 - 调用LLM分析用户消息，自动提取知识条目
+router.post('/knowledge/chats/ask', async (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: '消息内容不能为空' });
+
+  const userId = req.user.id;
+  const userMsg = content.trim();
+
+  // 保存用户消息
+  const userChatId = uuidv4();
+  db.prepare(`
+    INSERT INTO knowledge_chats (id, user_id, role, content)
+    VALUES (?, ?, 'user', ?)
+  `).run(userChatId, userId, userMsg);
+
+  try {
+    const systemPrompt = `你是一个知识提取助手。用户会分享各种内容（经验、灵感、平台规则、对标分析等），你需要从中提取有价值的知识条目。
+
+分类列表（必须从中选择）：
+- platform_rules: 平台规则
+- benchmark_insights: 对标借鉴
+- review_experience: 复盘经验
+- industry_insights: 行业洞察
+- agent_learning: 智能体学习
+- inspiration: 灵感库
+- life_log: 生活档案
+- experience: 经验库
+- cognition: 认知库
+
+请返回JSON格式：
+{
+  "reply": "对用户消息的简短回复（1-2句话）",
+  "entries": [
+    {
+      "category": "分类code",
+      "title": "条目标题（简洁概括）",
+      "content": "详细内容（保留关键信息）",
+      "value_analysis": "这条知识的价值和适用场景（1句话）",
+      "tags": ["标签1", "标签2"]
+    }
+  ]
+}
+
+规则：
+1. 如果用户消息包含值得沉淀的知识，提取1-3条
+2. 如果只是闲聊或无价值内容，entries为空数组
+3. 标题简洁，content保留关键信息，tags 2-4个
+4. 只返回JSON，不要其他文字`;
+
+    const result = await callLLM(userId, systemPrompt, userMsg, 'knowledge-extract');
+    const parsed = parseJSONResponse(result.data || result.rawText);
+
+    const reply = parsed?.reply || '已收到你的消息，我正在整理...';
+    const extractedEntries = parsed?.entries || [];
+
+    // 保存提取的条目
+    const savedEntries = [];
+    for (const entry of extractedEntries) {
+      if (!entry.title || !entry.category) continue;
+      const entryId = uuidv4();
+      db.prepare(`
+        INSERT INTO knowledge_entries (id, user_id, category, title, content, source, value_analysis, tags, confidence)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        entryId, userId, entry.category, entry.title,
+        entry.content || '', 'knowledge_chat', entry.value_analysis || '',
+        entry.tags ? JSON.stringify(entry.tags) : null, 0.7
+      );
+      savedEntries.push({ id: entryId, ...entry });
+    }
+
+    // 保存AI回复
+    const aiChatId = uuidv4();
+    db.prepare(`
+      INSERT INTO knowledge_chats (id, user_id, role, content, extracted_entries)
+      VALUES (?, ?, 'assistant', ?, ?)
+    `).run(aiChatId, userId, reply, savedEntries.length ? JSON.stringify(savedEntries) : null);
+
+    res.json({ reply, extractedEntries: savedEntries });
+  } catch (err) {
+    console.error('Knowledge chat ask error:', err);
+    const fallbackReply = '已收到你的消息，知识整理服务暂时不可用。';
+    const aiChatId = uuidv4();
+    db.prepare(`
+      INSERT INTO knowledge_chats (id, user_id, role, content)
+      VALUES (?, ?, 'assistant', ?)
+    `).run(aiChatId, userId, fallbackReply);
+    res.json({ reply: fallbackReply, extractedEntries: [] });
+  }
+});
+
+// 知识检索 - 按关键词搜索，供其他模块（智能体、选题等）调用
+router.get('/knowledge/search', (req, res) => {
+  const { query, category, limit = 10 } = req.query;
+  if (!query) return res.json({ entries: [] });
+
+  let sql = `SELECT * FROM knowledge_entries WHERE user_id = ? AND deleted_at IS NULL`;
+  const params = [req.user.id];
+
+  if (category && category !== 'all') {
+    sql += ' AND category = ?';
+    params.push(category);
+  }
+
+  // 关键词匹配：title、content、tags
+  const kw = `%${query}%`;
+  sql += ` AND (title LIKE ? OR content LIKE ? OR tags LIKE ? OR value_analysis LIKE ?)`;
+  params.push(kw, kw, kw, kw);
+
+  // 简单排序：title 匹配优先，其次 content
+  sql += ` ORDER BY
+    CASE WHEN title LIKE ? THEN 0 ELSE 1 END,
+    is_pinned DESC, created_at DESC LIMIT ?`;
+  params.push(kw, parseInt(limit));
+
+  const entries = db.prepare(sql).all(...params);
+  // 解析 tags JSON
+  for (const e of entries) {
+    try { e.tags = e.tags ? JSON.parse(e.tags) : []; } catch { e.tags = []; }
+  }
+  res.json({ entries });
 });
 
 // 创作人画像
