@@ -69,6 +69,12 @@ const LIGHT_MODEL_REQUEST_KEYWORDS = [
   '用便宜', '小模型', '快速模型'
 ];
 
+// 用户明确要求使用主力模型的关键词
+const MAIN_MODEL_REQUEST_KEYWORDS = [
+  '主力模型', '用主力', '主力', '大模型', '强模型', '高质量模型',
+  '用强', '用大'
+];
+
 /**
  * 判断任务复杂度
  * @param {string} taskName - 技能名或智能体角色描述
@@ -94,23 +100,11 @@ function classifyTaskComplexity(taskName, systemPrompt, userPrompt) {
     }
     const userText = realUserContent.toLowerCase();
 
-    // 1. 用户明确要求用轻量模型 → 直接轻量
-    const lightRequested = LIGHT_MODEL_REQUEST_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
-    if (lightRequested) return 'simple';
+    // 1. 用户明确要求用主力模型 → 主力模型（唯一触发主力的条件）
+    const mainRequested = MAIN_MODEL_REQUEST_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
+    if (mainRequested) return 'complex';
 
-    const simpleInUser = SIMPLE_TASK_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
-    const complexInUser = COMPLEX_TASK_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
-
-    // 2. 命中复杂关键词 → 主力模型
-    if (complexInUser) return 'complex';
-
-    // 3. 命中简单关键词 → 轻量模型
-    if (simpleInUser) return 'simple';
-
-    // 4. 长请求 → 复杂
-    if ((userPrompt || '').length > 2000) return 'complex';
-
-    // 5. 默认：智能体群聊对话默认用轻量模型（回复通常简单）
+    // 2. 其他所有情况 → 轻量模型
     return 'simple';
   }
 
