@@ -39,7 +39,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户（Hugging Face Spaces 要求，也提升安全性）
-RUN useradd -m -u 1000 appuser
+# 注意：node:20-slim 已带 node 用户(UID 1000)，不能再指定 -u 1000
+RUN useradd -m appuser
 
 # 复制后端依赖
 COPY --from=backend-builder /app/server/node_modules ./server/node_modules
