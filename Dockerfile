@@ -7,6 +7,9 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/client
 
+# 配置 npm 淘宝镜像
+RUN npm config set registry https://registry.npmmirror.com
+
 # 复制前端 package 文件并安装依赖
 COPY client/package.json client/package-lock.json* ./
 RUN npm ci --production=false || npm install
@@ -20,8 +23,15 @@ FROM node:20-slim AS backend-builder
 
 WORKDIR /app/server
 
+# 换阿里云 apt 源（国内构建速度提升10倍以上）
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
+
 # 安装编译依赖（libsql 需要）
 RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+# 配置 npm 淘宝镜像
+RUN npm config set registry https://registry.npmmirror.com
 
 # 复制后端 package 文件并安装依赖
 COPY server/package.json server/package-lock.json* ./
@@ -31,6 +41,10 @@ RUN npm ci --production || npm install --production
 FROM node:20-slim AS production
 
 WORKDIR /app
+
+# 换阿里云 apt 源
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
 # 安装运行时依赖
 RUN apt-get update && \
