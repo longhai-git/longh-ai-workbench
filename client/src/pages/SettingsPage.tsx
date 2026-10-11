@@ -517,17 +517,24 @@ export default function SettingsPage() {
 
                   {llmConfig.light_model_enabled && (
                     <div className="space-y-3">
+                      <div className="bg-amber-50 border border-amber-300 rounded-lg p-3">
+                        <p className="text-xs text-amber-800">
+                          ⚠️ <b>必须先在火山方舟控制台创建轻量模型接入点</b>，否则智能体群聊将调用失败。
+                          <br />操作：火山方舟控制台 → 在线推理 → 创建接入点 → 选择 <b>doubao-seed-1-6-flash</b> 或其他轻量模型 → 复制接入点 ID 填入下方
+                          <br />轻量模型与主力模型共用同一个 API Key 和接口地址，无需额外配置。
+                        </p>
+                      </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">轻量模型 (接入点ID)</label>
                         <input
                           type="text"
                           value={llmConfig.light_model_name || ''}
                           onChange={(e) => setLlmConfig({ ...llmConfig, light_model_name: e.target.value })}
-                          placeholder="例如：doubao-1-5-lite-xxxxxxxx 或 doubao-seed-1-6-250615"
+                          placeholder="例如：ep-2026xxxxxxxxxx-xxxxx"
                           className="input-field text-sm"
                         />
                         <p className="text-xs text-gray-400 mt-1">
-                          建议选用 Lite / Seed 等低成本模型，用于标题生成、标签提取、简单摘要等任务
+                          填入火山方舟轻量模型的<b>接入点 ID</b>（格式 ep-xxxxxxxx-xxxxx），不是模型名称。智能体群聊默认使用此模型。
                         </p>
                       </div>
 
