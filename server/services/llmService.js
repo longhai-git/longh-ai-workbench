@@ -154,20 +154,25 @@ export function selectModelForTask(config, taskName, systemPrompt, userPrompt) {
   // 除非用户明确要求主力模型，否则一律使用轻量模型
   if (!taskName) {
     if (complexity === 'complex') {
+      console.log(`[Model Route] 智能体群聊 → 主力模型(${mainModel})，原因：用户明确要求`);
       return { model: mainModel, tier: 'main' };
     }
+    console.log(`[Model Route] 智能体群聊 → 轻量模型(${lightModel})，原因：默认轻量`);
     return { model: lightModel, tier: 'light' };
   }
 
   // 技能执行：受 light_model_enabled 开关控制
   if (!lightEnabled || !config.light_model_name) {
+    console.log(`[Model Route] 技能(${taskName}) → 主力模型(${mainModel})，原因：轻量模型未启用`);
     return { model: mainModel, tier: 'main' };
   }
 
   if (complexity === 'simple') {
+    console.log(`[Model Route] 技能(${taskName}) → 轻量模型(${lightModel})，原因：简单任务`);
     return { model: lightModel, tier: 'light' };
   }
 
+  console.log(`[Model Route] 技能(${taskName}) → 主力模型(${mainModel})，原因：复杂任务`);
   return { model: mainModel, tier: 'main' };
 }
 
@@ -459,10 +464,11 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
     };
 
     console.log(`[LLM] 调用火山方舟: ${baseUrl}/chat/completions | 模型: ${modelName} | 层级: ${modelTier} | 技能: ${skillName || 'agent-chat'}`);
-    
-    // 设置30秒超时（覆盖整个fetch+json解析过程）
+
+    // 智能体群聊超时60秒（多智能体并行调用需要更多时间），技能执行30秒
+    const timeoutMs = skillName === null ? 60000 : 30000;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     let response;
     try {
@@ -521,8 +527,22 @@ export async function callLLM(userId, systemPrompt, userPrompt, skillName = null
     
   } catch (error) {
     console.error('LLM call error:', error.message);
-    
-    // 失败降级：返回mock数据
+
+    // 智能体群聊：不返回mock，返回明确错误，让调用方用 fallback reply
+    if (skillName === null) {
+      return {
+        success: false,
+        data: null,
+        rawText: '',
+        tokenInput: 0,
+        tokenOutput: 0,
+        mock: true,
+        confidence: 0,
+        fallbackReason: error.message
+      };
+    }
+
+    // 技能执行：失败降级返回mock数据
     console.log('Falling back to mock response');
     const mockData = generateMockResponse(skillName, userPrompt);
     return {

@@ -493,9 +493,9 @@ router.post('/agent-group-chats', (req, res) => {
 
 router.get('/agent-group-chats/:id/messages', (req, res) => {
   const messages = db.prepare(`
-    SELECT * FROM agent_group_messages 
-    WHERE group_id = ? 
-    ORDER BY created_at ASC LIMIT 200
+    SELECT * FROM agent_group_messages
+    WHERE group_id = ?
+    ORDER BY created_at ASC, rowid ASC LIMIT 200
   `).all(req.params.id);
   res.json({ messages });
 });
@@ -802,9 +802,9 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
     
     // 获取历史消息（用于上下文）
     const historyMessages = db.prepare(`
-      SELECT * FROM agent_group_messages 
-      WHERE group_id = ? 
-      ORDER BY created_at ASC LIMIT 50
+      SELECT * FROM agent_group_messages
+      WHERE group_id = ?
+      ORDER BY created_at ASC, rowid ASC LIMIT 50
     `).all(groupId);
     
     // 获取群内智能体

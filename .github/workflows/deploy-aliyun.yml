@@ -20,5 +20,5 @@ jobs:
             cd /opt/longh-ai-workbench
             git config --global --add safe.directory /opt/longh-ai-workbench
             git pull origin main
-            sudo docker compose up -d --build
+            sudo docker compose up -d --build --no-cache
             echo "部署完成"
