@@ -141,7 +141,8 @@ function classifyTaskComplexity(taskName, systemPrompt, userPrompt) {
  * @returns {{model: string, tier: string}} 模型名和层级
  */
 // 默认轻量模型（火山方舟豆包轻量版，低成本低延迟）
-const DEFAULT_LIGHT_MODEL = 'doubao-seed-1-6-flash-250615';
+// 支持通过环境变量 LIGHT_MODEL_ID 覆盖（用户使用接入点ID时需要配置）
+const DEFAULT_LIGHT_MODEL = process.env.LIGHT_MODEL_ID || 'doubao-seed-1-6-flash-250615';
 
 export function selectModelForTask(config, taskName, systemPrompt, userPrompt) {
   const mainModel = config.model_name || 'doubao-seed-2-1-pro-250615';

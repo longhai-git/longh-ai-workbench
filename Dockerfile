@@ -46,10 +46,11 @@ WORKDIR /app
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
     sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
 
-# 安装运行时依赖
+# 安装运行时依赖（ca-certificates 是 HTTPS 请求的关键依赖）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3 make g++ && \
+    ca-certificates python3 make g++ && \
+    update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户（Hugging Face Spaces 要求，也提升安全性）
