@@ -58,7 +58,15 @@ const COMPLEX_TASK_KEYWORDS = [
 const SIMPLE_TASK_KEYWORDS = [
   '标题', '标签', 'tag', '封面建议', '评论', '热点', '翻译',
   '摘要', '总结', '润色', '改写', '扩写', '缩写', '分类',
-  '提取关键词', 'emoji', '文案', '短句', '一句话', '简介'
+  '提取关键词', 'emoji', '文案', '短句', '一句话', '简介',
+  '测试', '自我测试', '打招呼', '聊天', '闲聊', '你好',
+  '自我介绍', '介绍一下', '在吗'
+];
+
+// 用户明确要求使用轻量模型的关键词
+const LIGHT_MODEL_REQUEST_KEYWORDS = [
+  '轻量模型', '用轻量', '轻量', '便宜的模型', '省钱', '快速回复',
+  '用便宜', '小模型', '快速模型'
 ];
 
 /**
@@ -72,13 +80,11 @@ function classifyTaskComplexity(taskName, systemPrompt, userPrompt) {
   // 对于智能体群聊（taskName 为 null），优先检查用户的实际请求内容
   if (!taskName) {
     // 从群聊包装的 prompt 中提取用户真实发言，避免 chatHistory 污染关键词匹配
-    // 包装格式：【群聊上下文】\n{history}\n【当前用户发言】\n{userContent}\n\n请你以...的身份...
     let realUserContent = userPrompt || '';
     const marker = '【当前用户发言】';
     const idx = realUserContent.indexOf(marker);
     if (idx !== -1) {
       realUserContent = realUserContent.slice(idx + marker.length);
-      // 截到"请你以"或下一个【】标记之前
       const cutIdx1 = realUserContent.indexOf('请你以');
       const cutIdx2 = realUserContent.indexOf('\n【');
       let cut = -1;
@@ -87,17 +93,25 @@ function classifyTaskComplexity(taskName, systemPrompt, userPrompt) {
       if (cut !== -1) realUserContent = realUserContent.slice(0, cut);
     }
     const userText = realUserContent.toLowerCase();
+
+    // 1. 用户明确要求用轻量模型 → 直接轻量
+    const lightRequested = LIGHT_MODEL_REQUEST_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
+    if (lightRequested) return 'simple';
+
     const simpleInUser = SIMPLE_TASK_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
     const complexInUser = COMPLEX_TASK_KEYWORDS.some(kw => userText.includes(kw.toLowerCase()));
 
-    // 用户请求中命中简单关键词且无复杂关键词 → 轻量模型
-    if (simpleInUser && !complexInUser) return 'simple';
+    // 2. 命中复杂关键词 → 主力模型
+    if (complexInUser) return 'complex';
 
-    // 长请求 → 复杂
+    // 3. 命中简单关键词 → 轻量模型
+    if (simpleInUser) return 'simple';
+
+    // 4. 长请求 → 复杂
     if ((userPrompt || '').length > 2000) return 'complex';
 
-    // 默认复杂（保守策略）
-    return 'complex';
+    // 5. 默认：智能体群聊对话默认用轻量模型（回复通常简单）
+    return 'simple';
   }
 
   // 技能执行：检查技能名 + 系统提示词
