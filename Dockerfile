@@ -53,6 +53,11 @@ RUN apt-get update && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+# Node.js 内置 fetch 使用自己的 TLS 证书存储，不读系统证书
+# 通过 NODE_EXTRA_CA_CERTS 让 Node.js 使用系统 CA 证书
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
 # 创建非 root 用户（Hugging Face Spaces 要求，也提升安全性）
 # 注意：node:20-slim 已带 node 用户(UID 1000)，不能再指定 -u 1000
 RUN useradd -m appuser
