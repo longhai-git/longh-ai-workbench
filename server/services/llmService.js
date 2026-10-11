@@ -140,17 +140,29 @@ function classifyTaskComplexity(taskName, systemPrompt, userPrompt) {
  * @param {string} userPrompt
  * @returns {{model: string, tier: string}} 模型名和层级
  */
+// 默认轻量模型（火山方舟豆包轻量版，低成本低延迟）
+const DEFAULT_LIGHT_MODEL = 'doubao-seed-1-6-flash-250615';
+
 export function selectModelForTask(config, taskName, systemPrompt, userPrompt) {
   const mainModel = config.model_name || 'doubao-seed-2-1-pro-250615';
-  const lightModel = config.light_model_name;
+  const lightModel = config.light_model_name || DEFAULT_LIGHT_MODEL;
   const lightEnabled = config.light_model_enabled === 1 || config.light_model_enabled === true;
 
-  // 未启用轻量模型或未配置，统一用主力模型
-  if (!lightEnabled || !lightModel) {
-    return { model: mainModel, tier: 'main' };
+  const complexity = classifyTaskComplexity(taskName, systemPrompt, userPrompt);
+
+  // 智能体群聊（taskName 为 null）：不受 light_model_enabled 开关限制，
+  // 除非用户明确要求主力模型，否则一律使用轻量模型
+  if (!taskName) {
+    if (complexity === 'complex') {
+      return { model: mainModel, tier: 'main' };
+    }
+    return { model: lightModel, tier: 'light' };
   }
 
-  const complexity = classifyTaskComplexity(taskName, systemPrompt, userPrompt);
+  // 技能执行：受 light_model_enabled 开关控制
+  if (!lightEnabled || !config.light_model_name) {
+    return { model: mainModel, tier: 'main' };
+  }
 
   if (complexity === 'simple') {
     return { model: lightModel, tier: 'light' };

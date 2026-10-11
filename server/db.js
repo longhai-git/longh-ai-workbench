@@ -447,11 +447,16 @@ try {
   }
   // 轻量模型配置（简单任务分流使用，降低成本）
   if (!colNames.includes('light_model_name')) {
-    db.prepare("ALTER TABLE llm_configs ADD COLUMN light_model_name TEXT").run();
+    db.prepare("ALTER TABLE llm_configs ADD COLUMN light_model_name TEXT DEFAULT 'doubao-seed-1-6-flash-250615'").run();
   }
   if (!colNames.includes('light_model_enabled')) {
-    db.prepare("ALTER TABLE llm_configs ADD COLUMN light_model_enabled INTEGER DEFAULT 0").run();
+    db.prepare("ALTER TABLE llm_configs ADD COLUMN light_model_enabled INTEGER DEFAULT 1").run();
   }
+  // 为已有用户回填默认轻量模型配置（未设置名称或未启用的）
+  try {
+    db.prepare("UPDATE llm_configs SET light_model_name = 'doubao-seed-1-6-flash-250615' WHERE light_model_name IS NULL OR light_model_name = ''").run();
+    db.prepare("UPDATE llm_configs SET light_model_enabled = 1 WHERE light_model_enabled IS NULL OR light_model_enabled = 0").run();
+  } catch (e) { /* 忽略回填错误 */ }
 } catch (e) {
   console.log('LLM configs migration skipped:', e.message);
 }
