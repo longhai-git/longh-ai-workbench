@@ -449,6 +449,16 @@ const agentRolePrompts = {
 说话要求：用口语化的中文，友好专业，每次回复控制在80-150字之间。`,
 };
 
+// 统一时间格式：SQLite 的 CURRENT_TIMESTAMP 格式为 "2024-10-11 12:00:00"（无时区）
+// 需要转换为 ISO 格式 "2024-10-11T12:00:00.000Z"，确保前端 new Date() 正确解析
+function normalizeTime(t) {
+  if (!t) return new Date().toISOString();
+  // 已经是 ISO 格式（带 T 和 Z）
+  if (typeof t === 'string' && (t.includes('T') || t.includes('Z'))) return t;
+  // SQLite 格式 "2024-10-11 12:00:00" → 转为 UTC ISO
+  return new Date(t + ' UTC').toISOString();
+}
+
 // 群聊列表 - 确保用户至少有一个默认群
 router.get('/agent-group-chats', (req, res) => {
   const userId = req.user.id;
@@ -493,11 +503,16 @@ router.post('/agent-group-chats', (req, res) => {
 
 router.get('/agent-group-chats/:id/messages', (req, res) => {
   const messages = db.prepare(`
-    SELECT * FROM agent_group_messages
+    SELECT *, rowid as _rowid FROM agent_group_messages
     WHERE group_id = ?
-    ORDER BY created_at ASC, rowid ASC LIMIT 200
+    ORDER BY _rowid ASC LIMIT 200
   `).all(req.params.id);
-  res.json({ messages });
+  // 统一时间格式为 ISO，确保前端 new Date() 解析正确
+  const normalized = messages.map(m => ({
+    ...m,
+    created_at: normalizeTime(m.created_at),
+  }));
+  res.json({ messages: normalized });
 });
 
 // 获取智能体状态列表
@@ -630,10 +645,11 @@ async function processAgentReply(agent, idx, userContent, chatHistory, groupId, 
     const modelUsed = llmResult.model || 'unknown';
 
     const replyId = uuidv4();
+    const replyTimestamp = new Date().toISOString();
     db.prepare(`
-      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content, token_input, token_output, model_used)
-      VALUES (?, ?, 'agent', ?, ?, ?, ?, ?, ?)
-    `).run(replyId, groupId, agent.id, agent.name, replyContent, tokenInput, tokenOutput, modelUsed);
+      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content, token_input, token_output, model_used, created_at)
+      VALUES (?, ?, 'agent', ?, ?, ?, ?, ?, ?, ?)
+    `).run(replyId, groupId, agent.id, agent.name, replyContent, tokenInput, tokenOutput, modelUsed, replyTimestamp);
 
     return {
       id: replyId,
@@ -642,6 +658,7 @@ async function processAgentReply(agent, idx, userContent, chatHistory, groupId, 
       tokenInput,
       tokenOutput,
       model: modelUsed,
+      created_at: replyTimestamp,
       modelTier: llmResult.modelTier || 'main',
     };
   } catch (err) {
@@ -793,18 +810,19 @@ router.post('/agent-group-chats/:id/messages', async (req, res) => {
     const group = db.prepare('SELECT * FROM agent_group_chat WHERE id = ? AND user_id = ?').get(groupId, userId);
     if (!group) return res.status(404).json({ error: '群聊不存在' });
     
-    // 保存用户消息
+    // 保存用户消息（使用 ISO 时间戳，避免 SQLite CURRENT_TIMESTAMP 时区问题）
     const userMsgId = uuidv4();
+    const userTimestamp = new Date().toISOString();
     db.prepare(`
-      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content, mention_agent_ids)
-      VALUES (?, ?, 'user', ?, ?, ?, ?)
-    `).run(userMsgId, groupId, userId, req.user.username, content, mention_agent_ids ? JSON.stringify(mention_agent_ids) : null);
+      INSERT INTO agent_group_messages (id, group_id, sender_type, sender_id, sender_name, content, mention_agent_ids, created_at)
+      VALUES (?, ?, 'user', ?, ?, ?, ?, ?)
+    `).run(userMsgId, groupId, userId, req.user.username, content, mention_agent_ids ? JSON.stringify(mention_agent_ids) : null, userTimestamp);
     
     // 获取历史消息（用于上下文）
     const historyMessages = db.prepare(`
-      SELECT * FROM agent_group_messages
+      SELECT *, rowid as _rowid FROM agent_group_messages
       WHERE group_id = ?
-      ORDER BY created_at ASC, rowid ASC LIMIT 50
+      ORDER BY _rowid ASC LIMIT 50
     `).all(groupId);
     
     // 获取群内智能体

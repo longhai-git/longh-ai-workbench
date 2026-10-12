@@ -363,7 +363,7 @@ export default function AgentGroupPage() {
     setInputText('')
     setSending(true)
 
-    // 立即添加用户消息到UI
+    // 立即添加用户消息到UI（使用后端返回的时间戳，避免时区不一致）
     const tempUserMsg: GroupMessage = {
       id: 'temp-' + Date.now(),
       group_id: activeChat.id,
@@ -404,7 +404,7 @@ export default function AgentGroupPage() {
             token_input: r.tokenInput || 0,
             token_output: r.tokenOutput || 0,
             model_used: r.model || '',
-            created_at: new Date().toISOString(),
+            created_at: r.created_at || new Date().toISOString(),
           }
           setMessages(prev => [...prev, agentMsg])
           // 智能体之间间隔
