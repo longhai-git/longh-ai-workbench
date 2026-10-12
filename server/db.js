@@ -674,6 +674,19 @@ CREATE TABLE IF NOT EXISTS platform_api_configs (
   UNIQUE(user_id, platform_name)
 )`);
 
+// 平台配置表（抖音等平台的 client_key/secret）
+db.exec(`
+CREATE TABLE IF NOT EXISTS platform_configs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  client_key TEXT,
+  client_secret TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, platform)
+)`);
+
 // 全局公共约束配置
 db.exec(`
 CREATE TABLE IF NOT EXISTS system_configs (
