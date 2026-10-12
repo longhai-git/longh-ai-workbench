@@ -239,8 +239,13 @@ function shouldShowDateSeparator(messages: GroupMessage[], index: number) {
   if (index === 0) return true
   const prev = new Date(messages[index - 1].created_at)
   const curr = new Date(messages[index].created_at)
-  // 超过5分钟显示分隔
-  return curr.getTime() - prev.getTime() > 5 * 60 * 1000
+  // 只有用户消息（不是智能体回复）才可能触发新的日期分隔
+  // 且时间差超过5分钟
+  if (messages[index].sender_type === 'user') {
+    return curr.getTime() - prev.getTime() > 5 * 60 * 1000
+  }
+  // 智能体消息不触发分隔
+  return false
 }
 
 // === 主组件 ===

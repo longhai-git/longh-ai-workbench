@@ -502,15 +502,19 @@ router.post('/agent-group-chats', (req, res) => {
 });
 
 router.get('/agent-group-chats/:id/messages', (req, res) => {
+  // 直接用 SQL 将 created_at 转为毫秒级时间戳，彻底避免格式混乱
+  // rowid 保证按插入顺序排列（不受同秒消息顺序影响）
   const messages = db.prepare(`
-    SELECT *, rowid as _rowid FROM agent_group_messages
+    SELECT *,
+      rowid as _rowid,
+      CAST(strftime('%s', created_at) AS INTEGER) * 1000 as ts
+    FROM agent_group_messages
     WHERE group_id = ?
     ORDER BY _rowid ASC LIMIT 200
   `).all(req.params.id);
-  // 统一时间格式为 ISO，确保前端 new Date() 解析正确
   const normalized = messages.map(m => ({
     ...m,
-    created_at: normalizeTime(m.created_at),
+    created_at: new Date(m.ts).toISOString(),
   }));
   res.json({ messages: normalized });
 });
