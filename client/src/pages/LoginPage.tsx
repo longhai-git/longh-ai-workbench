@@ -76,7 +76,7 @@ export default function LoginPage() {
     try {
       const res = await forgotPasswordSendCode(contact)
       setMaskedContact(res.maskedContact)
-      setSentCode(res.code) // 开发阶段保存验证码用于展示
+      setSentCode(res.code || '') // 未配置短信/邮件服务时后端会返回验证码供页面显示
       setForgotStep(2)
       // 开始倒计时
       setCountdown(60)
@@ -297,7 +297,7 @@ export default function LoginPage() {
                       <span className="font-medium">验证码：</span>
                       <span className="text-lg font-bold tracking-widest ml-2">{sentCode}</span>
                       <p className="text-xs mt-1 text-amber-600">
-                        （开发阶段显示验证码，接入短信/邮件服务后将通过手机/邮箱发送）
+                        （当前未配置短信/邮件服务，验证码直接显示；配置后将发送至手机/邮箱）
                       </p>
                     </div>
                   )}

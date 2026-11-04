@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { generateToken, authMiddleware } from '../middleware/auth.js';
 import { initUserDefaultData } from '../services/initService.js';
+import { sendResetCode } from '../services/notifyService.js';
 
 const router = Router();
 
@@ -267,19 +268,40 @@ router.post('/forgot-password/send-code', async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(codeId, user.id, code, type, normalizedInput, expiresAt);
 
-    // TODO: 接入短信/邮件服务后，通过短信/邮件发送验证码
-    // 当前阶段：返回验证码供前端显示（生产环境应删除此返回）
-    console.log(`[Password Reset] 验证码已生成: 用户=${user.username}, 类型=${type}, 验证码=${code}`);
+    // 发送验证码：已配置短信/邮件服务则真实发送，否则降级为页面显示
+    console.log(`[Password Reset] 验证码已生成: 用户=${user.username}, 类型=${type}`);
 
-    res.json({
-      success: true,
-      message: '验证码已发送',
-      // 开发阶段返回验证码，生产环境应删除 code 字段
-      code: code,
-      maskedContact: type === 'phone'
-        ? normalizedInput.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
-        : normalizedInput.replace(/(.{2}).*(@.*)/, '$1***$2')
-    });
+    const sendResult = await sendResetCode({ type, contact: normalizedInput, code });
+
+    if (sendResult.sent) {
+      return res.json({
+        success: true,
+        sent: true,
+        message: type === 'email' ? '验证码已发送至邮箱' : '验证码已发送至手机',
+        maskedContact: type === 'phone'
+          ? normalizedInput.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+          : normalizedInput.replace(/(.{2}).*(@.*)/, '$1***$2')
+      });
+    }
+
+    // 未配置服务：保留原有开发模式，返回验证码供页面显示
+    if (sendResult.reason === 'NOT_CONFIGURED') {
+      return res.json({
+        success: true,
+        sent: false,
+        devMode: true,
+        message: '未配置短信/邮件服务，验证码已在页面显示',
+        code,
+        maskedContact: type === 'phone'
+          ? normalizedInput.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+          : normalizedInput.replace(/(.{2}).*(@.*)/, '$1***$2')
+      });
+    }
+
+    // 已配置但发送失败：作废刚生成的验证码，避免残留
+    db.prepare('UPDATE password_reset_codes SET used = 1 WHERE id = ?').run(codeId);
+    console.error('[Password Reset] 验证码发送失败:', sendResult.reason, sendResult.message || '');
+    return res.status(500).json({ error: '验证码发送失败，请稍后重试' });
   } catch (err) {
     console.error('Forgot password send code error:', err);
     res.status(500).json({ error: '发送验证码失败' });
