@@ -9,6 +9,8 @@ export default function LoginPage() {
   const [isRegister, setIsRegister] = useState(false)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -30,11 +32,30 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // 注册时校验手机号/邮箱（至少填写一项，用于密码找回）
+    if (isRegister) {
+      const trimmedPhone = phone.trim()
+      const trimmedEmail = email.trim()
+      if (!trimmedPhone && !trimmedEmail) {
+        setError('请至少填写手机号或邮箱，用于找回密码')
+        return
+      }
+      if (trimmedPhone && !/^1[3-9]\d{9}$/.test(trimmedPhone)) {
+        setError('手机号格式不正确')
+        return
+      }
+      if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        setError('邮箱格式不正确')
+        return
+      }
+    }
+
     setLoading(true)
 
     try {
       if (isRegister) {
-        await register(username, password)
+        await register(username, password, phone.trim(), email.trim())
       } else {
         await login(username, password)
       }
@@ -418,18 +439,64 @@ export default function LoginPage() {
                   />
                 </div>
 
+                {isRegister && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        手机号
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="请输入手机号，用于找回密码"
+                          className="input-field pl-10"
+                          maxLength={11}
+                        />
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                          <Phone className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        邮箱
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="请输入邮箱，用于找回密码"
+                          className="input-field pl-10"
+                        />
+                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1.5">
+                        手机号和邮箱至少填写一项，忘记密码时用于接收验证码
+                      </p>
+                    </div>
+                  </>
+                )}
+
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-sm font-medium text-gray-700">
                       密码
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowForgotPassword(true)}
-                      className="text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
-                    >
-                      忘记密码？
-                    </button>
+                    {!isRegister && (
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotPassword(true)}
+                        className="text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                      >
+                        忘记密码？
+                      </button>
+                    )}
                   </div>
                   <div className="relative">
                     <input

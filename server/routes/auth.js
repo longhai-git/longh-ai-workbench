@@ -10,7 +10,7 @@ const router = Router();
 // 注册
 router.post('/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, phone, email } = req.body;
     
     if (!username || !password) {
       return res.status(400).json({ error: '用户名和密码不能为空' });
@@ -23,17 +23,47 @@ router.post('/register', async (req, res) => {
     if (password.length < 6) {
       return res.status(400).json({ error: '密码至少6个字符' });
     }
+
+    // 手机号/邮箱：至少填写一个，用于密码找回
+    const normalizedPhone = phone?.trim() || null;
+    const normalizedEmail = email?.trim().toLowerCase() || null;
+
+    if (!normalizedPhone && !normalizedEmail) {
+      return res.status(400).json({ error: '请至少填写手机号或邮箱，用于找回密码' });
+    }
+
+    if (normalizedPhone && !/^1[3-9]\d{9}$/.test(normalizedPhone)) {
+      return res.status(400).json({ error: '手机号格式不正确' });
+    }
+
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ error: '邮箱格式不正确' });
+    }
     
     const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
     if (existingUser) {
       return res.status(400).json({ error: '用户名已存在' });
     }
+
+    if (normalizedPhone) {
+      const phoneOwner = db.prepare('SELECT id FROM users WHERE phone = ?').get(normalizedPhone);
+      if (phoneOwner) {
+        return res.status(400).json({ error: '该手机号已被注册' });
+      }
+    }
+
+    if (normalizedEmail) {
+      const emailOwner = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+      if (emailOwner) {
+        return res.status(400).json({ error: '该邮箱已被注册' });
+      }
+    }
     
     const userId = uuidv4();
     const passwordHash = await bcrypt.hash(password, 10);
     
-    db.prepare('INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)')
-      .run(userId, username, passwordHash, username === 'admin' ? 'admin' : 'user');
+    db.prepare('INSERT INTO users (id, username, password_hash, role, phone, email) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(userId, username, passwordHash, username === 'admin' ? 'admin' : 'user', normalizedPhone, normalizedEmail);
     
     // 初始化用户默认数据
     initUserDefaultData(userId, username);
@@ -46,7 +76,9 @@ router.post('/register', async (req, res) => {
         id: userId,
         username,
         avatar: null,
-        role: username === 'admin' ? 'admin' : 'user'
+        role: username === 'admin' ? 'admin' : 'user',
+        phone: normalizedPhone,
+        email: normalizedEmail
       }
     });
   } catch (err) {
@@ -82,7 +114,9 @@ router.post('/login', async (req, res) => {
         id: user.id,
         username: user.username,
         avatar: user.avatar,
-        role: user.role
+        role: user.role,
+        phone: user.phone || null,
+        email: user.email || null
       }
     });
   } catch (err) {
@@ -140,12 +174,15 @@ router.post('/forgot-password/send-code', async (req, res) => {
       return res.status(400).json({ error: '请输入手机号或邮箱' });
     }
 
+    const input = String(contact).trim();
+    const normalizedInput = input.includes('@') ? input.toLowerCase() : input;
+
     // 自动判断类型：手机号(纯数字11位) 或 邮箱(含@)
     let type = contactType;
     if (!type) {
-      if (/^1[3-9]\d{9}$/.test(contact)) {
+      if (/^1[3-9]\d{9}$/.test(normalizedInput)) {
         type = 'phone';
-      } else if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact)) {
+      } else if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedInput)) {
         type = 'email';
       } else {
         // 也可能是用手机号作为用户名注册的
@@ -153,13 +190,9 @@ router.post('/forgot-password/send-code', async (req, res) => {
       }
     }
 
-    // 查找用户：优先按 phone/email 列查找，其次按 username 查找
-    let user = null;
-    if (type === 'phone') {
-      user = db.prepare('SELECT * FROM users WHERE phone = ? OR username = ?').get(contact, contact);
-    } else {
-      user = db.prepare('SELECT * FROM users WHERE email = ?').get(contact);
-    }
+    // 仅按手机号/邮箱匹配，避免知道用户名即可重置密码
+    const user = db.prepare('SELECT * FROM users WHERE phone = ? OR email = ?')
+      .get(normalizedInput, normalizedInput);
 
     if (!user) {
       return res.status(404).json({ error: '未找到该手机号/邮箱关联的账号' });
@@ -177,7 +210,7 @@ router.post('/forgot-password/send-code', async (req, res) => {
     db.prepare(`
       INSERT INTO password_reset_codes (id, user_id, code, contact_type, contact_value, expires_at)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(codeId, user.id, code, type, contact, expiresAt);
+    `).run(codeId, user.id, code, type, normalizedInput, expiresAt);
 
     // TODO: 接入短信/邮件服务后，通过短信/邮件发送验证码
     // 当前阶段：返回验证码供前端显示（生产环境应删除此返回）
@@ -189,8 +222,8 @@ router.post('/forgot-password/send-code', async (req, res) => {
       // 开发阶段返回验证码，生产环境应删除 code 字段
       code: code,
       maskedContact: type === 'phone'
-        ? contact.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
-        : contact.replace(/(.{2}).*(@.*)/, '$1***$2')
+        ? normalizedInput.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')
+        : normalizedInput.replace(/(.{2}).*(@.*)/, '$1***$2')
     });
   } catch (err) {
     console.error('Forgot password send code error:', err);
@@ -207,6 +240,10 @@ router.post('/forgot-password/reset', async (req, res) => {
       return res.status(400).json({ error: '请填写完整信息' });
     }
 
+    const input = String(contact).trim();
+    const normalizedInput = input.includes('@') ? input.toLowerCase() : input;
+    const normalizedCode = String(code).trim();
+
     if (newPassword.length < 6) {
       return res.status(400).json({ error: '新密码至少6个字符' });
     }
@@ -216,7 +253,7 @@ router.post('/forgot-password/reset', async (req, res) => {
       SELECT * FROM password_reset_codes
       WHERE contact_value = ? AND code = ? AND used = 0
       ORDER BY created_at DESC LIMIT 1
-    `).get(contact, code);
+    `).get(normalizedInput, normalizedCode);
 
     if (!resetRecord) {
       return res.status(400).json({ error: '验证码错误或已失效' });
