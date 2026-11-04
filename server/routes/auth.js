@@ -165,6 +165,61 @@ router.post('/change-password', authMiddleware, async (req, res) => {
   }
 });
 
+// 获取当前用户绑定的手机号/邮箱
+router.get('/contact', authMiddleware, (req, res) => {
+  const row = db.prepare('SELECT phone, email FROM users WHERE id = ?').get(req.user.id);
+  res.json({
+    phone: row?.phone || null,
+    email: row?.email || null
+  });
+});
+
+// 绑定/更新手机号与邮箱（用于忘记密码时接收验证码）
+router.put('/contact', authMiddleware, (req, res) => {
+  try {
+    const { phone, email } = req.body;
+
+    const normalizedPhone = phone?.trim() || null;
+    const normalizedEmail = email?.trim().toLowerCase() || null;
+
+    if (!normalizedPhone && !normalizedEmail) {
+      return res.status(400).json({ error: '请至少绑定手机号或邮箱中的一项' });
+    }
+
+    if (normalizedPhone && !/^1[3-9]\d{9}$/.test(normalizedPhone)) {
+      return res.status(400).json({ error: '手机号格式不正确' });
+    }
+
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({ error: '邮箱格式不正确' });
+    }
+
+    if (normalizedPhone) {
+      const owner = db.prepare('SELECT id FROM users WHERE phone = ? AND id <> ?')
+        .get(normalizedPhone, req.user.id);
+      if (owner) {
+        return res.status(400).json({ error: '该手机号已被其他账号绑定' });
+      }
+    }
+
+    if (normalizedEmail) {
+      const owner = db.prepare('SELECT id FROM users WHERE email = ? AND id <> ?')
+        .get(normalizedEmail, req.user.id);
+      if (owner) {
+        return res.status(400).json({ error: '该邮箱已被其他账号绑定' });
+      }
+    }
+
+    db.prepare('UPDATE users SET phone = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(normalizedPhone, normalizedEmail, req.user.id);
+
+    res.json({ success: true, phone: normalizedPhone, email: normalizedEmail });
+  } catch (err) {
+    console.error('Bind contact error:', err);
+    res.status(500).json({ error: '保存失败' });
+  }
+});
+
 // 忘记密码 - 发送验证码
 router.post('/forgot-password/send-code', async (req, res) => {
   try {

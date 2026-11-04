@@ -16,6 +16,8 @@ import {
   Moon,
   Monitor,
   Palette,
+  Phone,
+  Mail,
 } from 'lucide-react'
 import api from '@/services/api'
 import { useAuthStore } from '@/store/authStore'
@@ -37,13 +39,52 @@ export default function SettingsPage() {
   const [douyinConfig, setDouyinConfig] = useState({ client_key: '', client_secret: '' })
   const [douyinStatus, setDouyinStatus] = useState<any>(null)
   const [douyinSaving, setDouyinSaving] = useState(false)
+  const [contact, setContact] = useState<{ phone: string; email: string }>({ phone: '', email: '' })
+  const [contactSaving, setContactSaving] = useState(false)
 
   useEffect(() => {
     fetchProfile()
     fetchLLMConfig()
     fetchPomodoroConfig()
     fetchDouyinStatus()
+    fetchContact()
   }, [])
+
+  const fetchContact = async () => {
+    try {
+      const res: any = await api.get('/auth/contact')
+      setContact({ phone: res.phone || '', email: res.email || '' })
+    } catch (e) { /* ignore */ }
+  }
+
+  const handleSaveContact = async () => {
+    const phone = contact.phone.trim()
+    const email = contact.email.trim()
+
+    if (!phone && !email) {
+      alert('请至少绑定手机号或邮箱中的一项')
+      return
+    }
+    if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+      alert('手机号格式不正确')
+      return
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      alert('邮箱格式不正确')
+      return
+    }
+
+    setContactSaving(true)
+    try {
+      const res: any = await api.put('/auth/contact', { phone, email })
+      setContact({ phone: res.phone || '', email: res.email || '' })
+      alert('绑定信息已保存')
+    } catch (e: any) {
+      alert(e.error || '保存失败')
+    } finally {
+      setContactSaving(false)
+    }
+  }
 
   const fetchDouyinStatus = async () => {
     try {
@@ -201,6 +242,7 @@ export default function SettingsPage() {
 
   const tabs = [
     { key: 'profile', label: '账号定位', icon: User },
+    { key: 'security', label: '账号安全', icon: Shield },
     { key: 'llm', label: '大模型配置', icon: Bot },
     { key: 'pomodoro', label: '番茄时钟', icon: Clock },
     { key: 'appearance', label: '外观主题', icon: Palette },
@@ -293,6 +335,80 @@ export default function SettingsPage() {
                 >
                   <Save className="w-4 h-4" />
                   {saving ? '保存中...' : '保存设置'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 账号安全：绑定手机号/邮箱 */}
+          {activeTab === 'security' && (
+            <div className="card p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">账号安全</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                绑定手机号或邮箱后，忘记密码时可通过绑定的联系方式接收验证码找回密码。
+              </p>
+
+              <div className="space-y-5 max-w-xl">
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center text-primary-600 font-semibold text-sm">
+                    {(user?.username || 'U').slice(0, 1).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{user?.username}</p>
+                    <p className="text-xs text-gray-400">当前登录账号</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">手机号</label>
+                  <div className="relative">
+                    <input
+                      type="tel"
+                      value={contact.phone}
+                      onChange={(e) => setContact({ ...contact, phone: e.target.value })}
+                      placeholder="请输入手机号"
+                      className="input-field pl-10"
+                      maxLength={11}
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Phone className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">邮箱</label>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      value={contact.email}
+                      onChange={(e) => setContact({ ...contact, email: e.target.value })}
+                      placeholder="请输入邮箱"
+                      className="input-field pl-10"
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    手机号和邮箱至少绑定一项，用于忘记密码时接收验证码
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <Shield className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                  <span>
+                    绑定后，忘记密码时只能通过已绑定的手机号/邮箱找回，用户名不再作为找回凭证。
+                  </span>
+                </div>
+
+                <button
+                  onClick={handleSaveContact}
+                  disabled={contactSaving}
+                  className="btn-primary flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {contactSaving ? '保存中...' : '保存绑定信息'}
                 </button>
               </div>
             </div>
